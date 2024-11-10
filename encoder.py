@@ -2,7 +2,7 @@
 # @time:2024/8/27 21:26
 # Author:david yuan
 # @File:encoder.py
-# @Software:VeSync
+# @Software:MacauUST&VeSync
 
 
 from collections import Counter

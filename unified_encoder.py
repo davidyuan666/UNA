@@ -1,3 +1,9 @@
+# -*- coding = utf-8 -*-
+# @time:2024/10/26 06:30
+# Author:david yuan
+# @File:unified_encoder.py
+# @Software:MacauUST&VeSync
+
 from collections import Counter
 import torch
 import numpy as np
