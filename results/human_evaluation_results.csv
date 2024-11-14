@@ -1,0 +1,1686 @@
+method_name,regular_summary,bpe_summary,original_code,docstring,human_score
+PersonDictionary.parsePattern,"This method processes two lists: a named entity recognition (NR) tag list (`nrList`) and a list of `Vertex` objects (`vertexList`) which represent the original untagged sequence. It matches patterns in person names using a series of NR cases (e.g., U and V), modifies the vertex list to accommodate these cases, and builds a pattern string. The method then uses an Aho-Corasick algorithm implementation (`trie`) to match these patterns against a trie structure. Upon a successful match, it verifies the name against some predefined conditions to filter out incorrect matches. If the name passes these checks, it inserts the recognized person name into a more refined graph (`wordNetOptimum`) at the appropriate offsets calculated from the vertex list, ensuring these references in `wordNetAll`. The method also considers edge cases, such as ensuring the last character of a surname is not the same as the first name characters, in order to avoid false positives.",Person name pattern matching and vertex list modification for optimized word net insertion.,"public static void parsePattern(List<NR> nrList, List<Vertex> vertexList, final WordNet wordNetOptimum, final WordNet wordNetAll)
+    {
+        // 拆分UV
+        ListIterator<Vertex> listIterator = vertexList.listIterator();
+        StringBuilder sbPattern = new StringBuilder(nrList.size());
+        NR preNR = NR.A;
+        boolean backUp = false;
+        int index = 0;
+        for (NR nr : nrList)
+        {
+            ++index;
+            Vertex current = listIterator.next();
+//            logger.trace(""{}/{}"", current.realWord, nr);
+            switch (nr)
+            {
+                case U:
+                    if (!backUp)
+                    {
+                        vertexList = new ArrayList<Vertex>(vertexList);
+                        listIterator = vertexList.listIterator(index);
+                        backUp = true;
+                    }
+                    sbPattern.append(NR.K.toString());
+                    sbPattern.append(NR.B.toString());
+                    preNR = B;
+                    listIterator.previous();
+                    String nowK = current.realWord.substring(0, current.realWord.length() - 1);
+                    String nowB = current.realWord.substring(current.realWord.length() - 1);
+                    listIterator.set(new Vertex(nowK));
+                    listIterator.next();
+                    listIterator.add(new Vertex(nowB));
+                    continue;
+                case V:
+                    if (!backUp)
+                    {
+                        vertexList = new ArrayList<Vertex>(vertexList);
+                        listIterator = vertexList.listIterator(index);
+                        backUp = true;
+                    }
+                    if (preNR == B)
+                    {
+                        sbPattern.append(NR.E.toString());  //BE
+                    }
+                    else
+                    {
+                        sbPattern.append(NR.D.toString());  //CD
+                    }
+                    sbPattern.append(NR.L.toString());
+                    // 对串也做一些修改
+                    listIterator.previous();
+                    String EorD = current.realWord.substring(0, 1);
+                    String L = current.realWord.substring(1, current.realWord.length());
+                    listIterator.set(new Vertex(EorD));
+                    listIterator.next();
+                    listIterator.add(new Vertex(L));
+                    continue;
+                default:
+                    sbPattern.append(nr.toString());
+                    break;
+            }
+            preNR = nr;
+        }
+        String pattern = sbPattern.toString();
+//        logger.trace(""模式串：{}"", pattern);
+//        logger.trace(""对应串：{}"", vertexList);
+//        if (pattern.length() != vertexList.size())
+//        {
+//            logger.warn(""人名识别模式串有bug"", pattern, vertexList);
+//            return;
+//        }
+        final Vertex[] wordArray = vertexList.toArray(new Vertex[0]);
+        final int[] offsetArray = new int[wordArray.length];
+        offsetArray[0] = 0;
+        for (int i = 1; i < wordArray.length; ++i)
+        {
+            offsetArray[i] = offsetArray[i - 1] + wordArray[i - 1].realWord.length();
+        }
+        trie.parseText(pattern, new AhoCorasickDoubleArrayTrie.IHit<NRPattern>()
+        {
+            @Override
+            public void hit(int begin, int end, NRPattern value)
+            {
+//            logger.trace(""匹配到：{}"", keyword);
+                StringBuilder sbName = new StringBuilder();
+                for (int i = begin; i < end; ++i)
+                {
+                    sbName.append(wordArray[i].realWord);
+                }
+                String name = sbName.toString();
+//            logger.trace(""识别出：{}"", name);
+                // 对一些bad case做出调整
+                switch (value)
+                {
+                    case BCD:
+                        if (name.charAt(0) == name.charAt(2)) return; // 姓和最后一个名不可能相等的
+//                        String cd = name.substring(1);
+//                        if (CoreDictionary.contains(cd))
+//                        {
+//                            EnumItem<NR> item = PersonDictionary.dictionary.get(cd);
+//                            if (item == null || !item.containsLabel(Z)) return; // 三字名字但是后两个字不在词典中，有很大可能性是误命中
+//                        }
+                        break;
+                }
+                if (isBadCase(name)) return;
+
+                // 正式算它是一个名字
+                if (HanLP.Config.DEBUG)
+                {
+                    System.out.printf(""识别出人名：%s %s\n"", name, value);
+                }
+                int offset = offsetArray[begin];
+                wordNetOptimum.insert(offset, new Vertex(Predefine.TAG_PEOPLE, name, ATTRIBUTE, WORD_ID), wordNetAll);
+            }
+        });
+    }","模式匹配
+
+@param nrList         确定的标注序列
+@param vertexList     原始的未加角色标注的序列
+@param wordNetOptimum 待优化的图
+@param wordNetAll     全词图",2
+RestTemplateBuilder.setReadTimeout,此方法设置基础的ClientHttpRequestFactory上的读取超时时间。它接收一个Duration类型的参数readTimeout，并通过requestFactoryCustomizer配置读取超时时间。返回一个新的RestTemplateBuilder实例，其中包含更新后的读取超时设置。该方法主要用于创建和配置RestTemplate实例的构建器，确保请求超过指定时间没有响应时会超时。,设置读取超时的RestTemplateBuilder方法，返回更新后的新实例。,"public RestTemplateBuilder setReadTimeout(Duration readTimeout) {
+		return new RestTemplateBuilder(this.detectRequestFactory, this.rootUri,
+				this.messageConverters, this.requestFactorySupplier,
+				this.uriTemplateHandler, this.errorHandler, this.basicAuthentication,
+				this.restTemplateCustomizers,
+				this.requestFactoryCustomizer.readTimeout(readTimeout),
+				this.interceptors);
+	}","Sets the read timeout on the underlying {@link ClientHttpRequestFactory}.
+@param readTimeout the read timeout
+@return a new builder instance.
+@since 2.1.0",2
+LinearModel.score,该方法计算特征向量对应的得分。首先，方法遍历由特征id组成的特征向量，对于每个特征id，若其值为-1，继续下一个特征；若id超出合法范围则抛出非法参数异常。然后，对于有效的特征id，计算其在参数数组中的索引，通过特征id和当前标签的组合索引在参数数组中累加相应的权重，从而获得得分。,计算特征向量的加权得分，处理非法索引。,"public double score(int[] featureVector, int currentTag)
+    {
+        double score = 0;
+        for (int index : featureVector)
+        {
+            if (index == -1)
+            {
+                continue;
+            }
+            else if (index < -1 || index >= featureMap.size())
+            {
+                throw new IllegalArgumentException(""在打分时传入了非法的下标"");
+            }
+            else
+            {
+                index = index * featureMap.tagSet.size() + currentTag;
+                score += parameter[index];    // 其实就是特征权重的累加
+            }
+        }
+        return score;
+    }","通过命中的特征函数计算得分
+
+@param featureVector 压缩形式的特征id构成的特征向量
+@return",2
+Cluster.set_composite_vector,"The method `set_composite_vector` clears the existing composite vector and iterates over all documents in the `documents_` collection, adding each document's feature vector to the composite vector. The purpose of this method is to aggregate feature vectors from all documents into a single composite vector.",Clear composite vector and add each document's feature vector.,"void set_composite_vector()
+    {
+        composite_.clear();
+        for (Document<K> document : documents_)
+        {
+            composite_.add_vector(document.feature());
+        }
+    }",Add the vectors of all documents to a composite vector.,1
+DoubleArrayTrie.load,该方法从指定路径加载数据，并要求提供一个值数组。它首先检查是否需要通过文件通道加载数据；否则使用ByteArrayStream来加载。在执行加载操作后，将传入的值数组存储到内部字段v中。返回true表示加载成功，false表示失败。,从路径加载数据，保存值数组并返回加载结果,"public boolean load(String path, V[] value)
+    {
+        if (!(IOAdapter == null ? loadBaseAndCheckByFileChannel(path) :
+        load(ByteArrayStream.createByteArrayStream(path), value)
+        )) return false;
+        v = value;
+        return true;
+    }","从磁盘加载，需要额外提供值
+
+@param path
+@param value
+@return",2
+NettyRSocketServerFactory.addServerCustomizers,该方法用于添加ServerRSocketFactoryCustomizer实例，这些实例将在构建服务器时应用。方法首先确保提供的参数不为null，随后将它们添加到当前的serverCustomizers集合中。,将自定义器添加到serverCustomizers集合中以用于服务器构建,"public void addServerCustomizers(
+			ServerRSocketFactoryCustomizer... serverCustomizers) {
+		Assert.notNull(serverCustomizers, ""ServerCustomizer must not be null"");
+		this.serverCustomizers.addAll(Arrays.asList(serverCustomizers));
+	}","Add {@link ServerRSocketFactoryCustomizer}s that should applied while building the
+server.
+@param serverCustomizers the customizers to add",1
+DependencyCustomizer.ifAnyMissingClasses,该方法返回一个嵌套的DependencyCustomizer实例，该实例在指定的类名中至少有一个不在类路径中时才适用。方法使用loadClass尝试加载传递的类名，如果有任意一个类无法加载，则返回true，使canAdd方法返回true，从而启用自定义逻辑。,检查给定类名是否存在于类路径上，如果任一缺失则应用自定义器,"public DependencyCustomizer ifAnyMissingClasses(String... classNames) {
+		return new DependencyCustomizer(this) {
+			@Override
+			protected boolean canAdd() {
+				for (String className : classNames) {
+					try {
+						DependencyCustomizer.this.loader.loadClass(className);
+					}
+					catch (Exception ex) {
+						return true;
+					}
+				}
+				return false;
+			}
+		};
+	}","Create a nested {@link DependencyCustomizer} that only applies if any of the
+specified class names are not on the class path.
+@param classNames the class names to test
+@return a nested {@link DependencyCustomizer}",
+JSONArray.put,JSONArray.put 方法用于在指定索引位置设置值。如果在目标索引位置已经有值，则这个值将被替换。如果索引位置超过当前数组大小，数组会用 null 填充以达到相应长度。对于值是数字类型的场景，会验证其是否为合法的Double。整个操作可能会抛出 JSONException 异常。,在特定索引位置设置或替换JSONArray的值，处理数字类型验证。,"public JSONArray put(int index, Object value) throws JSONException {
+		if (value instanceof Number) {
+			// deviate from the original by checking all Numbers, not just floats &
+			// doubles
+			JSON.checkDouble(((Number) value).doubleValue());
+		}
+		while (this.values.size() <= index) {
+			this.values.add(null);
+		}
+		this.values.set(index, value);
+		return this;
+	}","Sets the value at {@code index} to {@code value}, null padding this array to the
+required length if necessary. If a value already exists at {@code
+index}, it will be replaced.
+@param index the index to set the value to
+@param value a {@link JSONObject}, {@link JSONArray}, String, Boolean, Integer,
+Long, Double, {@link JSONObject#NULL}, or {@code null}. May not be
+{@link Double#isNaN() NaNs} or {@link Double#isInfinite() infinities}.
+@return this array.
+@throws JSONException if processing of json failed",
+RedisConnectionConfiguration.getClusterConfiguration,该方法用于获取或创建Redis集群配置。若已存在则直接返回，否则根据配置文件生成新的集群配置。它检查clusterConfiguration成员变量，若为空则从properties中获取集群属性并创建RedisClusterConfiguration实例，包括设置节点和最大重定向数以及密码。若properties中集群设置信息缺失，则返回null。,获取或创建Redis集群配置，若不存在则返回null。,"protected final RedisClusterConfiguration getClusterConfiguration() {
+		if (this.clusterConfiguration != null) {
+			return this.clusterConfiguration;
+		}
+		if (this.properties.getCluster() == null) {
+			return null;
+		}
+		RedisProperties.Cluster clusterProperties = this.properties.getCluster();
+		RedisClusterConfiguration config = new RedisClusterConfiguration(
+				clusterProperties.getNodes());
+		if (clusterProperties.getMaxRedirects() != null) {
+			config.setMaxRedirects(clusterProperties.getMaxRedirects());
+		}
+		if (this.properties.getPassword() != null) {
+			config.setPassword(RedisPassword.of(this.properties.getPassword()));
+		}
+		return config;
+	}","Create a {@link RedisClusterConfiguration} if necessary.
+@return {@literal null} if no cluster settings are set.",
+PoolingConnectionFactoryBean.setConnectionFactory,该方法设置XAConnectionFactory的实例而不使用setClassName方法。它将传入的connectionFactory对象分配给类的connectionFactory字段，同时直接设置类名为DirectXAConnectionFactory，并初始化驱动属性为一个新的Properties实例。,为PoolingConnectionFactoryBean设置XA连接工厂实例。,"public void setConnectionFactory(XAConnectionFactory connectionFactory) {
+		this.connectionFactory = connectionFactory;
+		setClassName(DirectXAConnectionFactory.class.getName());
+		setDriverProperties(new Properties());
+	}","Set the {@link XAConnectionFactory} directly, instead of calling
+{@link #setClassName(String)}.
+@param connectionFactory the connection factory to use",
+PersonDictionary.isBadCase,该方法检查指定人名是否在坏案例词典中。它通过从词典中获取与给定人名对应的 EnumItem 对象，然后检查该对象是否包含标签 'NR.A'。如果包含，返回 true，表示该人名是一个坏案例；否则返回 false。,检查人名是否为坏案例，返回布尔值。,"static boolean isBadCase(String name)
+    {
+        EnumItem<NR> nrEnumItem = dictionary.get(name);
+        if (nrEnumItem == null) return false;
+        return nrEnumItem.containsLabel(NR.A);
+    }","因为任何算法都无法解决100%的问题，总是有一些bad case，这些bad case会以“盖公章 A 1”的形式加入词典中<BR>
+这个方法返回人名是否是bad case
+
+@param name
+@return",
+RestTemplateExchangeTags.outcome,该方法通过解析给定HTTP响应的状态码来创建一个表示结果的Tag对象。根据状态码的不同范围，返回相应的OUTCOME标签，包括信息性、成功、重定向、客户端错误和服务器错误标签。如果响应为null或捕获到IO异常或不合法参数异常，则返回未知结果标签。,根据HTTP响应的状态码返回对应的结果标签,"public static Tag outcome(ClientHttpResponse response) {
+		try {
+			if (response != null) {
+				HttpStatus statusCode = response.getStatusCode();
+				if (statusCode.is1xxInformational()) {
+					return OUTCOME_INFORMATIONAL;
+				}
+				if (statusCode.is2xxSuccessful()) {
+					return OUTCOME_SUCCESS;
+				}
+				if (statusCode.is3xxRedirection()) {
+					return OUTCOME_REDIRECTION;
+				}
+				if (statusCode.is4xxClientError()) {
+					return OUTCOME_CLIENT_ERROR;
+				}
+				if (statusCode.is5xxServerError()) {
+					return OUTCOME_SERVER_ERROR;
+				}
+			}
+			return OUTCOME_UNKNOWN;
+		}
+		catch (IOException | IllegalArgumentException ex) {
+			return OUTCOME_UNKNOWN;
+		}
+	}","Creates an {@code outcome} {@code Tag} derived from the
+{@link ClientHttpResponse#getStatusCode() status} of the given {@code response}.
+@param response the response
+@return the outcome tag
+@since 2.2.0",
+AbstractFilterRegistrationBean.setDispatcherTypes,此方法用于根据指定的调度器类型元素设置调度器类型的集合。通过传递第一个元素和其他可选元素，此方法创建一个EnumSet集合，并将其分配给dispatcherTypes属性。,根据指定元素设置调度器类型集合,"public void setDispatcherTypes(DispatcherType first, DispatcherType... rest) {
+		this.dispatcherTypes = EnumSet.of(first, rest);
+	}","Convenience method to {@link #setDispatcherTypes(EnumSet) set dispatcher types}
+using the specified elements.
+@param first the first dispatcher type
+@param rest additional dispatcher types",
+IOUtil.newBufferedReader,该方法为指定路径的文件创建一个BufferedReader。首先，调用IOUtil.newInputStream(path)以获取该路径的输入流，然后使用指定的UTF-8字符集创建一个InputStreamReader，并最终包装成BufferedReader返回。方法可能会抛出FileNotFoundException或UnsupportedEncodingException。,创建指定路径文件的UTF-8编码BufferedReader,"public static BufferedReader newBufferedReader(String path) throws IOException
+    {
+        return new BufferedReader(new InputStreamReader(IOUtil.newInputStream(path), ""UTF-8""));
+    }","创建一个BufferedReader
+@param path
+@return
+@throws FileNotFoundException
+@throws UnsupportedEncodingException",
+MainClassFinder.doWithMainClasses,"该方法在指定的根目录下遍历所有文件和子目录，执行回调操作以处理每个包含main方法的类。
+
+主要步骤包括：
+1. 检查根目录是否存在且为有效目录，否则抛出异常或返回null。
+2. 创建一个堆栈以深度优先遍历所有文件。
+3. 对于每个文件：
+   - 如果是可读的类文件，则打开文件流创建ClassDescriptor对象。
+   - 检查ClassDescriptor对象中的main方法，如果存在，则调用回调方法。
+   - 将结果返回给调用者，如果存在任何非空回调结果。
+4. 如果是子目录，则对其中文件进行过滤并继续入栈。
+5. 遍历完毕返回null。",遍历目录树，处理每个包含main方法的类并调用回调。,"static <T> T doWithMainClasses(File rootFolder, MainClassCallback<T> callback)
+			throws IOException {
+		if (!rootFolder.exists()) {
+			return null; // nothing to do
+		}
+		if (!rootFolder.isDirectory()) {
+			throw new IllegalArgumentException(
+					""Invalid root folder '"" + rootFolder + ""'"");
+		}
+		String prefix = rootFolder.getAbsolutePath() + ""/"";
+		Deque<File> stack = new ArrayDeque<>();
+		stack.push(rootFolder);
+		while (!stack.isEmpty()) {
+			File file = stack.pop();
+			if (file.isFile()) {
+				try (InputStream inputStream = new FileInputStream(file)) {
+					ClassDescriptor classDescriptor = createClassDescriptor(inputStream);
+					if (classDescriptor != null && classDescriptor.isMainMethodFound()) {
+						String className = convertToClassName(file.getAbsolutePath(),
+								prefix);
+						T result = callback.doWith(new MainClass(className,
+								classDescriptor.getAnnotationNames()));
+						if (result != null) {
+							return result;
+						}
+					}
+				}
+			}
+			if (file.isDirectory()) {
+				pushAllSorted(stack, file.listFiles(PACKAGE_FOLDER_FILTER));
+				pushAllSorted(stack, file.listFiles(CLASS_FILE_FILTER));
+			}
+		}
+		return null;
+	}","Perform the given callback operation on all main classes from the given root
+folder.
+@param <T> the result type
+@param rootFolder the root folder
+@param callback the callback
+@return the first callback result or {@code null}
+@throws IOException in case of I/O errors",
+IntervalNode.checkForOverlaps,该方法用于检查给定的区间（interval）与已有区间集合（this.intervals）的重叠情况。方法根据提供的方向参数（direction）进行判断，LEFT方向时判定所有起始点小于等于给定区间结束点的区间为重叠；RIGHT方向则判定所有结束点大于等于给定区间起始点的区间为重叠。最终返回符合条件的重叠区间列表。,检查区间重叠，返回符合条件的区间列表,"protected List<Intervalable> checkForOverlaps(Intervalable interval, Direction direction)
+    {
+
+        List<Intervalable> overlaps = new ArrayList<Intervalable>();
+        for (Intervalable currentInterval : this.intervals)
+        {
+            switch (direction)
+            {
+                case LEFT:
+                    if (currentInterval.getStart() <= interval.getEnd())
+                    {
+                        overlaps.add(currentInterval);
+                    }
+                    break;
+                case RIGHT:
+                    if (currentInterval.getEnd() >= interval.getStart())
+                    {
+                        overlaps.add(currentInterval);
+                    }
+                    break;
+            }
+        }
+        return overlaps;
+    }","寻找重叠
+@param interval 一个区间，与该区间重叠
+@param direction 方向，表明重叠区间在interval的左边还是右边
+@return",
+BitVector.set,该方法在给定位向量中的特定位进行设置。接受一个整数（id）和一个布尔值（bit）作为参数。如果bit为true，则在_units数据结构中设置位置id的位为1。具体实现是通过将id除以UNIT_SIZE得到索引，对应单元与1左移id对UNIT_SIZE取模后的结果进行按位或运算。,将指定位置的位设置为1,"void set(int id, boolean bit)
+    {
+        if (bit)
+        {
+            _units.set(id / UNIT_SIZE, _units.get(id / UNIT_SIZE)
+                    | 1 << (id % UNIT_SIZE));
+        }
+    }","设置某一位的比特
+@param id 位
+@param bit 比特",
+AhoCorasickDoubleArrayTrie.parseText,该方法用于处理输入文本以识别其包含的模式。采用Aho-Corasick双数组Trie算法，在给定文本中逐字符遍历，将当前状态更新为与当前字符对应的状态。如果当前位置的状态存在输出数组，则为每个匹配命中调用处理器的hit方法，传递命中位置的信息。处理器接口IHit用于处理发现的匹配。该方法通过逐字符扫描和状态转移实现高效的多模式匹配。,Aho-Corasick自动机方法，用于从文本中识别模式并处理匹配项,"public void parseText(String text, IHit<V> processor)
+    {
+        int position = 1;
+        int currentState = 0;
+        for (int i = 0; i < text.length(); ++i)
+        {
+            currentState = getState(currentState, text.charAt(i));
+            int[] hitArray = output[currentState];
+            if (hitArray != null)
+            {
+                for (int hit : hitArray)
+                {
+                    processor.hit(position - l[hit], position, v[hit]);
+                }
+            }
+            ++position;
+        }
+    }","处理文本
+
+@param text      文本
+@param processor 处理器",
+GroovyCompiler.compile,该方法用于编译指定的Groovy源代码。首先清除类加载器的缓存，然后创建并配置编译单元和类收集器。对于每个源代码路径，都会将其转换为URL并添加到编译单元。执行AST转换后，编译单元在CLASS_GENERATION阶段进行编译。收集器收集所有加载的类。如果存在主类，则将其移到类列表的首位。最终，返回所有编译的类对象。该方法可能会抛出编译失败或I/O相关的异常。,编译指定的Groovy源代码并返回类数组,"public Class<?>[] compile(String... sources)
+			throws CompilationFailedException, IOException {
+
+		this.loader.clearCache();
+		List<Class<?>> classes = new ArrayList<>();
+
+		CompilerConfiguration configuration = this.loader.getConfiguration();
+
+		CompilationUnit compilationUnit = new CompilationUnit(configuration, null,
+				this.loader);
+		ClassCollector collector = this.loader.createCollector(compilationUnit, null);
+		compilationUnit.setClassgenCallback(collector);
+
+		for (String source : sources) {
+			List<String> paths = ResourceUtils.getUrls(source, this.loader);
+			for (String path : paths) {
+				compilationUnit.addSource(new URL(path));
+			}
+		}
+
+		addAstTransformations(compilationUnit);
+
+		compilationUnit.compile(Phases.CLASS_GENERATION);
+		for (Object loadedClass : collector.getLoadedClasses()) {
+			classes.add((Class<?>) loadedClass);
+		}
+		ClassNode mainClassNode = MainClass.get(compilationUnit);
+
+		Class<?> mainClass = null;
+		for (Class<?> loadedClass : classes) {
+			if (mainClassNode.getName().equals(loadedClass.getName())) {
+				mainClass = loadedClass;
+			}
+		}
+		if (mainClass != null) {
+			classes.remove(mainClass);
+			classes.add(0, mainClass);
+		}
+
+		return ClassUtils.toClassArray(classes);
+	}","Compile the specified Groovy sources, applying any
+{@link CompilerAutoConfiguration}s. All classes defined in the sources will be
+returned from this method.
+@param sources the sources to compile
+@return compiled classes
+@throws CompilationFailedException in case of compilation failures
+@throws IOException in case of I/O errors
+@throws CompilationFailedException in case of compilation errors",
+JSONArray.optBoolean,"optBoolean从JSONArray中按指定索引位置提取一个对象, 尝试将其转换为Boolean。如果转换成功，返回转换后的Boolean值；如果对象为null或不能转换，返回提供的后备值(fallback)。",从JSONArray中按索引返回布尔值或给定默认值。,"public boolean optBoolean(int index, boolean fallback) {
+		Object object = opt(index);
+		Boolean result = JSON.toBoolean(object);
+		return result != null ? result : fallback;
+	}","Returns the value at {@code index} if it exists and is a boolean or can be coerced
+to a boolean. Returns {@code fallback} otherwise.
+@param index the index to get the value from
+@param fallback the fallback value
+@return the value at {@code index} of {@code fallback}",
+JSONObject.optJSONObject,该方法通过名称参数获取映射的值，如果该值是JSONObject类型，则返回该值；否则返回null。首先通过调用opt方法获取名称对应的对象，然后检查该对象是否为JSONObject类型，若是则进行类型转换并返回，否则返回null。,返回与名称匹配的JSONObject对象或null。,"public JSONObject optJSONObject(String name) {
+		Object object = opt(name);
+		return object instanceof JSONObject ? (JSONObject) object : null;
+	}","Returns the value mapped by {@code name} if it exists and is a {@code
+JSONObject}. Returns null otherwise.
+@param name the name of the property
+@return the value or {@code null}",
+HttpTunnelPayload.getPayloadData,"This static method attempts to read payload data from a given ReadableByteChannel. It allocates a ByteBuffer of a predefined size and reads data into it from the channel. If data is read successfully, the buffer is flipped to prepare it for reading and returned. If the reading operation is interrupted by an InterruptedIOException, the method returns null. An IllegalStateException is thrown if the channel is closed unexpectedly before any data can be read.",Reads data from a channel into a ByteBuffer and handles IO exceptions.,"public static ByteBuffer getPayloadData(ReadableByteChannel channel)
+			throws IOException {
+		ByteBuffer buffer = ByteBuffer.allocate(BUFFER_SIZE);
+		try {
+			int amountRead = channel.read(buffer);
+			Assert.state(amountRead != -1, ""Target server connection closed"");
+			buffer.flip();
+			return buffer;
+		}
+		catch (InterruptedIOException ex) {
+			return null;
+		}
+	}","Return the payload data for the given source {@link ReadableByteChannel} or null if
+the channel timed out whilst reading.
+@param channel the source channel
+@return payload data or {@code null}
+@throws IOException in case of I/O errors",
+AbstractHealthAggregator.aggregateDetails,此方法接收一个包含健康实例的映射，并返回一个新的LinkedHashMap，其中包含传入映射的所有条目。函数的目标是聚合传入的健康实例细节，使其能够从中获取相关信息。,合并健康细节为一个LinkedHashMap返回,"protected Map<String, Object> aggregateDetails(Map<String, Health> healths) {
+		return new LinkedHashMap<>(healths);
+	}","Return the map of 'aggregate' details that should be used from the specified
+healths.
+@param healths the health instances to aggregate
+@return a map of details
+@since 1.3.1",
+AbstractErrorWebExceptionHandler.renderErrorView,此方法用于呈现错误视图，根据给定的视图名称和错误数据生成响应。首先检查模板是否可用，如果可用则使用该模板渲染视图。若模板不可用，则尝试解析为静态HTML资源，并以资源形式插入到响应中。如果两者都不存在，则返回空的发布者（Mono.empty()）。,呈现错误视图，优先使用模板，否则使用静态HTML，缺失则返回空,"protected Mono<ServerResponse> renderErrorView(String viewName,
+			ServerResponse.BodyBuilder responseBody, Map<String, Object> error) {
+		if (isTemplateAvailable(viewName)) {
+			return responseBody.render(viewName, error);
+		}
+		Resource resource = resolveResource(viewName);
+		if (resource != null) {
+			return responseBody.body(BodyInserters.fromResource(resource));
+		}
+		return Mono.empty();
+	}","Render the given error data as a view, using a template view if available or a
+static HTML file if available otherwise. This will return an empty
+{@code Publisher} if none of the above are available.
+@param viewName the view name
+@param responseBody the error response being built
+@param error the error data as a map
+@return a Publisher of the {@link ServerResponse}",
+SpringApplication.getAllSources,该方法返回将添加到ApplicationContext中的所有源的不可变集合。当调用run(String...)时结合在构造函数中指定的任何主源以及通过setSources(Set)显式设置的任何附加源。首先检查primarySources集合是否为空，如果不为空则将其所有元素添加到allSources集合中。接着检查sources集合是否为空，如果不为空则将其所有元素也添加到allSources集合中。最终返回一个不可修改的allSources集合。,返回合并后的源集合，结果不可修改,"public Set<Object> getAllSources() {
+		Set<Object> allSources = new LinkedHashSet<>();
+		if (!CollectionUtils.isEmpty(this.primarySources)) {
+			allSources.addAll(this.primarySources);
+		}
+		if (!CollectionUtils.isEmpty(this.sources)) {
+			allSources.addAll(this.sources);
+		}
+		return Collections.unmodifiableSet(allSources);
+	}","Return an immutable set of all the sources that will be added to an
+ApplicationContext when {@link #run(String...)} is called. This method combines any
+primary sources specified in the constructor with any additional ones that have
+been {@link #setSources(Set) explicitly set}.
+@return an immutable set of all sources",
+CoreBiGramTableDictionary.getBiFrequency,此方法用于获取两个字符串在词典中的共现频次。通过CoreDictionary的trie进行字符串的精确匹配，如果任一字符串没有匹配，则返回频次0。成功匹配后，方法使用二分查找在预先定义的词对数组中寻找对应的B词索引，并通过偏移量计算得出其频次值。,检查两个字符串的词对共现频次并返回结果。,"public static int getBiFrequency(String a, String b)
+    {
+        int idA = CoreDictionary.trie.exactMatchSearch(a);
+        if (idA == -1)
+        {
+            return 0;
+        }
+        int idB = CoreDictionary.trie.exactMatchSearch(b);
+        if (idB == -1)
+        {
+            return 0;
+        }
+        int index = binarySearch(pair, start[idA], start[idA + 1] - start[idA], idB);
+        if (index < 0) return 0;
+        index <<= 1;
+        return pair[index + 1];
+    }","获取共现频次
+
+@param a 第一个词
+@param b 第二个词
+@return 第一个词@第二个词出现的频次",
+MultipartConfigFactory.createMultipartConfig,创建并返回一个新的MultipartConfigElement实例。方法中将配置的最大文件大小、最大请求大小和文件大小阈值从字符串格式转换为字节格式，分别用于创建MultipartConfigElement对象。,根据配置创建MultipartConfigElement实例并返回。,"public MultipartConfigElement createMultipartConfig() {
+		long maxFileSizeBytes = convertToBytes(this.maxFileSize, -1);
+		long maxRequestSizeBytes = convertToBytes(this.maxRequestSize, -1);
+		long fileSizeThresholdBytes = convertToBytes(this.fileSizeThreshold, 0);
+		return new MultipartConfigElement(this.location, maxFileSizeBytes,
+				maxRequestSizeBytes, (int) fileSizeThresholdBytes);
+	}","Create a new {@link MultipartConfigElement} instance.
+@return the multipart config element",
+Bindable.withExistingValue,这个方法用于创建一个更新后的Bindable实例，并给它赋予一个已有的值。首先通过断言验证existingValue参数是否符合条件：要么是null，要么是当前类型的数组，要么是当前类型的实例。接着根据existingValue是否为null来决定供应商（Supplier）的值。如果existingValue不为null，则使用该值初始化Supplier。最后，返回一个新的Bindable实例，该实例使用指定的类型、已解析的盒装类型、提供者Supplier和无注解进行构造。,创建一个包含现有值的更新Bindable实例,"public Bindable<T> withExistingValue(T existingValue) {
+		Assert.isTrue(
+				existingValue == null || this.type.isArray()
+						|| this.boxedType.resolve().isInstance(existingValue),
+				() -> ""ExistingValue must be an instance of "" + this.type);
+		Supplier<T> value = (existingValue != null) ? () -> existingValue : null;
+		return new Bindable<>(this.type, this.boxedType, value, NO_ANNOTATIONS);
+	}","Create an updated {@link Bindable} instance with an existing value.
+@param existingValue the existing value
+@return an updated {@link Bindable}",
+WebServiceTemplateBuilder.additionalMessageSenders,该方法用于向WebServiceTemplate添加额外的WebServiceMessageSenders。它首先通过Assert类确保输入参数messageSenders不为空，然后将这些messageSenders转换为List并调用另一个重载方法additionalMessageSenders处理。这种设计允许在构建器模式中追加更多的消息发送者，并返回一个新的WebServiceTemplateBuilder实例。,添加额外的WebService消息发送者并返回新的构建器实例。,"public WebServiceTemplateBuilder additionalMessageSenders(
+			WebServiceMessageSender... messageSenders) {
+		Assert.notNull(messageSenders, ""MessageSenders must not be null"");
+		return additionalMessageSenders(Arrays.asList(messageSenders));
+	}","Add additional {@link WebServiceMessageSender WebServiceMessageSenders} that should
+be used with the {@link WebServiceTemplate}.
+@param messageSenders the message senders to add
+@return a new builder instance.
+@see #messageSenders(WebServiceMessageSender...)",
+HttpTunnelServer.handle,该方法处理传入的HTTP连接。它通过服务器线程的处理方法处理传入的HTTP连接，然后调用 httpConnection.waitForResponse() 等待响应。如果发生 ConnectException 异常，则返回 HTTP 状态码为 GONE 的响应。,处理传入的HTTP连接，并根据情况返回响应,"protected void handle(HttpConnection httpConnection) throws IOException {
+		try {
+			getServerThread().handleIncomingHttp(httpConnection);
+			httpConnection.waitForResponse();
+		}
+		catch (ConnectException ex) {
+			httpConnection.respond(HttpStatus.GONE);
+		}
+	}","Handle an incoming HTTP connection.
+@param httpConnection the HTTP connection
+@throws IOException in case of I/O errors",
+ConfigurationPropertySources.from,该方法将一个给定的Spring PropertySource适配为一个新的SpringConfigurationPropertySource，并返回一个包含此单一适配Source的Iterable集合。,从Spring PropertySource创建和返回一个SpringConfigurationPropertySource的集合,"public static Iterable<ConfigurationPropertySource> from(PropertySource<?> source) {
+		return Collections.singleton(SpringConfigurationPropertySource.from(source));
+	}","Return {@link Iterable} containing a single new {@link ConfigurationPropertySource}
+adapted from the given Spring {@link PropertySource}.
+@param source the Spring property source to adapt
+@return an {@link Iterable} containing a single newly adapted
+{@link SpringConfigurationPropertySource}",
+AutoConfigurationImportSelector.getAutoConfigurationEntry,根据提供的注解元数据获取自动配置条目。 方法首先检查配置是否启用，然后从注解元数据中获取属性和候选配置，并去除重复项。接着，获取排除类的列表并进行排除检查。剩余的配置会按照自动配置元数据进行过滤。最后，触发自动配置导入事件，并返回一个包含有效配置和排除列表的AutoConfigurationEntry对象。,返回基于注解元数据的自动配置条目。,"protected AutoConfigurationEntry getAutoConfigurationEntry(
+			AutoConfigurationMetadata autoConfigurationMetadata,
+			AnnotationMetadata annotationMetadata) {
+		if (!isEnabled(annotationMetadata)) {
+			return EMPTY_ENTRY;
+		}
+		AnnotationAttributes attributes = getAttributes(annotationMetadata);
+		List<String> configurations = getCandidateConfigurations(annotationMetadata,
+				attributes);
+		configurations = removeDuplicates(configurations);
+		Set<String> exclusions = getExclusions(annotationMetadata, attributes);
+		checkExcludedClasses(configurations, exclusions);
+		configurations.removeAll(exclusions);
+		configurations = filter(configurations, autoConfigurationMetadata);
+		fireAutoConfigurationImportEvents(configurations, exclusions);
+		return new AutoConfigurationEntry(configurations, exclusions);
+	}","Return the {@link AutoConfigurationEntry} based on the {@link AnnotationMetadata}
+of the importing {@link Configuration @Configuration} class.
+@param autoConfigurationMetadata the auto-configuration metadata
+@param annotationMetadata the annotation metadata of the configuration class
+@return the auto-configurations that should be imported",
+CommonSynonymDictionaryEx.distance,该方法计算两个输入字符串在语义层面的距离。首先通过调用`get`方法获取输入字符串`a`和`b`的词条。如果任一词条为`null`，则返回最大长整型值的三分之一，表示无限距离。然后调用`ArrayDistance.computeAverageDistance`方法，计算并返回两个词条之间的平均距离。,计算两个字符串的语义距离，返回其词条的平均距离。,"public long distance(String a, String b)
+    {
+        Long[] itemA = get(a);
+        if (itemA == null) return Long.MAX_VALUE / 3;
+        Long[] itemB = get(b);
+        if (itemB == null) return Long.MAX_VALUE / 3;
+
+        return ArrayDistance.computeAverageDistance(itemA, itemB);
+    }","语义距离
+@param a
+@param b
+@return",
+RawConfigurationMetadata.resolveName,该方法用于解析ConfigurationMetadataItem对象的名称。首先，将对象的名称设置为其ID的默认值。然后，该方法尝试获取与该对象对应的ConfigurationMetadataSource。如果存在与该项对应的source，该方法将获取source的groupId并将其与项的ID进行比较。如果ID以groupId加上一个点号开头，则将点号后的部分设置为项的名称。,解析ConfigurationMetadataItem项的名称，并尝试从匹配的source中提取名称。,"private void resolveName(ConfigurationMetadataItem item) {
+		item.setName(item.getId()); // fallback
+		ConfigurationMetadataSource source = getSource(item);
+		if (source != null) {
+			String groupId = source.getGroupId();
+			String dottedPrefix = groupId + ""."";
+			String id = item.getId();
+			if (hasLength(groupId) && id.startsWith(dottedPrefix)) {
+				String name = id.substring(dottedPrefix.length());
+				item.setName(name);
+			}
+		}
+	}","Resolve the name of an item against this instance.
+@param item the item to resolve
+@see ConfigurationMetadataProperty#setName(String)",
+CharacterBasedGenerativeModel.learn,该方法通过遍历输入的词列表，将每个词按字符划分为开始、中间和结束状态，并添加到一个字符数组队列中。对于单字符词，直接标记为's'。对于多字符词，首字符标记为'b'，中间字符标记为'm'，末字符标记为'e'。然后，使用这些字符对创建一个窗口，并应用三元、二元和一元字的频率统计，以帮助构建生成模型。,模型从词列表学习字符序列，构建频率统计以形成生成模型。,"public void learn(List<Word> wordList)
+    {
+        LinkedList<char[]> sentence = new LinkedList<char[]>();
+        for (IWord iWord : wordList)
+        {
+            String word = iWord.getValue();
+            if (word.length() == 1)
+            {
+                sentence.add(new char[]{word.charAt(0), 's'});
+            }
+            else
+            {
+                sentence.add(new char[]{word.charAt(0), 'b'});
+                for (int i = 1; i < word.length() - 1; ++i)
+                {
+                    sentence.add(new char[]{word.charAt(i), 'm'});
+                }
+                sentence.add(new char[]{word.charAt(word.length() - 1), 'e'});
+            }
+        }
+        // 转换完毕，开始统计
+        char[][] now = new char[3][];   // 定长3的队列
+        now[1] = bos;
+        now[2] = bos;
+        tf.add(1, bos, bos);
+        tf.add(2, bos);
+        for (char[] i : sentence)
+        {
+            System.arraycopy(now, 1, now, 0, 2);
+            now[2] = i;
+            tf.add(1, i);   // uni
+            tf.add(1, now[1], now[2]);   // bi
+            tf.add(1, now);   // tri
+        }
+    }","让模型观测一个句子
+@param wordList",
+ConditionEvaluationReport.recordEvaluationCandidates,该方法用于记录作为条件评估候选的类的名称。首先，它确保提供的对象 evaluationCandidates 不是 null，然后将这些类的名称添加到 unconditionalClasses 集合中。,记录条件评估候选类名,"public void recordEvaluationCandidates(List<String> evaluationCandidates) {
+		Assert.notNull(evaluationCandidates, ""evaluationCandidates must not be null"");
+		this.unconditionalClasses.addAll(evaluationCandidates);
+	}","Records the names of the classes that are candidates for condition evaluation.
+@param evaluationCandidates the names of the classes whose conditions will be
+evaluated",
+AtomikosProperties.asProperties,"This method constructs a Properties object containing Atomikos configuration properties. It populates this Properties object by calling set() to insert key-value pairs. The keys are various configuration settings like 'service', 'max_timeout', and others, while the values are obtained by calling corresponding getter methods. The method also retrieves a Recovery object to obtain specific retry and delay properties for recovery settings. Finally, it returns the populated Properties object.",Method to extract Atomikos configuration into a Properties object.,"public Properties asProperties() {
+		Properties properties = new Properties();
+		set(properties, ""service"", getService());
+		set(properties, ""max_timeout"", getMaxTimeout());
+		set(properties, ""default_jta_timeout"", getDefaultJtaTimeout());
+		set(properties, ""max_actives"", getMaxActives());
+		set(properties, ""enable_logging"", isEnableLogging());
+		set(properties, ""tm_unique_name"", getTransactionManagerUniqueName());
+		set(properties, ""serial_jta_transactions"", isSerialJtaTransactions());
+		set(properties, ""allow_subtransactions"", isAllowSubTransactions());
+		set(properties, ""force_shutdown_on_vm_exit"", isForceShutdownOnVmExit());
+		set(properties, ""default_max_wait_time_on_shutdown"",
+				getDefaultMaxWaitTimeOnShutdown());
+		set(properties, ""log_base_name"", getLogBaseName());
+		set(properties, ""log_base_dir"", getLogBaseDir());
+		set(properties, ""checkpoint_interval"", getCheckpointInterval());
+		set(properties, ""threaded_2pc"", isThreadedTwoPhaseCommit());
+		Recovery recovery = getRecovery();
+		set(properties, ""forget_orphaned_log_entries_delay"",
+				recovery.getForgetOrphanedLogEntriesDelay());
+		set(properties, ""recovery_delay"", recovery.getDelay());
+		set(properties, ""oltp_max_retries"", recovery.getMaxRetries());
+		set(properties, ""oltp_retry_interval"", recovery.getRetryInterval());
+		return properties;
+	}","Returns the properties as a {@link Properties} object that can be used with
+Atomikos.
+@return the properties",
+SparseVector.normalize,该方法用于标准化稀疏向量。首先计算向量的范数，该范数是通过内部方法norm()获得的。在计算出范数后，方法遍历向量的每个元素，将每个元素的值除以范数，从而实现向量的标准化。,标准化稀疏向量的值,"void normalize()
+    {
+        double nrm = norm();
+        for (Map.Entry<Integer, Double> d : entrySet())
+        {
+            d.setValue(d.getValue() / nrm);
+        }
+    }",Normalize a vector.,
+WebServiceTemplateBuilder.messageSenders,该方法设置用于 WebServiceTemplate 的 WebServiceMessageSender 集合，通过传入一个非空的 messageSenders 参数来替换之前定义的消息发送器，包括任何基于 HTTP 的消息发送器，并返回新的 WebServiceTemplateBuilder 实例来允许链式调用。此方法使用了断言以确保 messageSenders 集合不为空，然后创建一个新的 WebServiceTemplateBuilder 实例，将此集合添加到内部配置中。可以考虑使用 additionalMessageSenders 方法来附加用户定义的发送器。,设置 WebServiceTemplate 的消息发送器并返回新的构建器实例,"public WebServiceTemplateBuilder messageSenders(
+			Collection<? extends WebServiceMessageSender> messageSenders) {
+		Assert.notNull(messageSenders, ""MessageSenders must not be null"");
+		return new WebServiceTemplateBuilder(this.detectHttpMessageSender,
+				this.interceptors, this.internalCustomizers, this.customizers,
+				this.messageSenders.set(messageSenders), this.marshaller,
+				this.unmarshaller, this.destinationProvider, this.transformerFactoryClass,
+				this.messageFactory);
+	}","Sets the {@link WebServiceMessageSender WebServiceMessageSenders} that should be
+used with the {@link WebServiceTemplate}. Setting this value will replace any
+previously defined message senders, including the HTTP-based message sender, if
+any. Consider using {@link #additionalMessageSenders(Collection)} to keep it with
+user-defined message senders.
+@param messageSenders the message senders to set
+@return a new builder instance.
+@see #additionalMessageSenders(Collection)
+@see #detectHttpMessageSender(boolean)",
+Nature.fromString,"This method safely converts a string representation of a part-of-speech to its corresponding Enum type. It looks up the provided `name` in a map (`idMap`) to find an associated identifier. If no such identifier is found, the method returns null. Otherwise, it uses this identifier to return the Enum value from a predefined array (`values`).","Converts a string to its matching Enum type, returning null if undefined.","public static final Nature fromString(String name)
+    {
+        Integer id = idMap.get(name);
+        if (id == null)
+            return null;
+        return values[id];
+    }","安全地将字符串类型的词性转为Enum类型，如果未定义该词性，则返回null
+
+@param name 字符串词性
+@return Enum词性",
+RestTemplateBuilder.requestFactory,该方法用于设置RestTemplate使用的ClientHttpRequestFactory类。它接受一个ClientHttpRequestFactory的类作为参数，并调用createRequestFactory方法创建请求工厂。这之后返回一个新的RestTemplateBuilder实例。该方法使用断言来确保传入的requestFactory参数不为null。,设置RestTemplate的请求工厂并返回新的构建器实例,"public RestTemplateBuilder requestFactory(
+			Class<? extends ClientHttpRequestFactory> requestFactory) {
+		Assert.notNull(requestFactory, ""RequestFactory must not be null"");
+		return requestFactory(() -> createRequestFactory(requestFactory));
+	}","Set the {@link ClientHttpRequestFactory} class that should be used with the
+{@link RestTemplate}.
+@param requestFactory the request factory to use
+@return a new builder instance",
+LexicalAnalyzerPipeline.getAnalyzer,该方法遍历 LexicalAnalyzerPipeline 中的所有对象，并检查每个对象是否为 LexicalAnalyzerPipe 类型。如果是，则返回其包含的词法分析器。如果没有匹配的对象，返回null。这样可以获取第一个词法分析管道中的词法分析器。,从管道中获取词法分析器对象，如果不存在则返回null。,"public LexicalAnalyzer getAnalyzer()
+    {
+        for (Pipe<List<IWord>, List<IWord>> pipe : this)
+        {
+            if (pipe instanceof LexicalAnalyzerPipe)
+            {
+                return ((LexicalAnalyzerPipe) pipe).analyzer;
+            }
+        }
+        return null;
+    }","获取代理的词法分析器
+
+@return",
+Utility.shrink,该方法用于将一个给定的泛型数组'from'缩减到另一个目标数组'to'中。其前提条件是'to'数组的长度小于或等于'from'数组的长度。方法通过使用System.arraycopy从(from)数组中复制元素到(to)数组，从第一个元素开始复制，复制的元素数量为'to'的长度，最后返回'to'数组。,通过复制实现数组缩减,"public static <T> T[] shrink(T[] from, T[] to)
+    {
+        assert to.length <= from.length;
+        System.arraycopy(from, 0, to, 0, to.length);
+        return to;
+    }","数组分割
+
+@param from 源
+@param to   目标
+@param <T>  类型
+@return 目标",
+DependencyCustomizer.add,添加一个指定模块的依赖项，使用给定的分类器和类型，并可选加入其所有传递性依赖。通过ArtifactCoordinatesResolver解析模块的group ID和版本，并使用createGrabAnnotation方法添加注释。,添加模块依赖，解析组和版本，添加注释。,"public DependencyCustomizer add(String module, String classifier, String type,
+			boolean transitive) {
+		if (canAdd()) {
+			ArtifactCoordinatesResolver artifactCoordinatesResolver = this.dependencyResolutionContext
+					.getArtifactCoordinatesResolver();
+			this.classNode.addAnnotation(
+					createGrabAnnotation(artifactCoordinatesResolver.getGroupId(module),
+							artifactCoordinatesResolver.getArtifactId(module),
+							artifactCoordinatesResolver.getVersion(module), classifier,
+							type, transitive));
+		}
+		return this;
+	}","Add a single dependency with the specified classifier and type and, optionally, all
+of its dependencies. The group ID and version of the dependency are resolved from
+the module by using the customizer's {@link ArtifactCoordinatesResolver}.
+@param module the module ID
+@param classifier the classifier, may be {@code null}
+@param type the type, may be {@code null}
+@param transitive {@code true} if the transitive dependencies should also be added,
+otherwise {@code false}
+@return this {@link DependencyCustomizer} for continued use",
+InfoPropertiesInfoContributor.replaceValue,该方法在content中检查是否包含指定的key，如果包含且value不为null，则用新的value替换content中对应key的值。,替换content中指定key的值为非null的value,"protected void replaceValue(Map<String, Object> content, String key, Object value) {
+		if (content.containsKey(key) && value != null) {
+			content.put(key, value);
+		}
+	}","Replace the {@code value} for the specified key if the value is not {@code null}.
+@param content the content to expose
+@param key the property to replace
+@param value the new value",
+InitializrService.executeInitializrMetadataRetrieval,该方法通过创建一个HTTP GET请求来从指定的URL检索服务的元数据。首先，它使用给定的URL实例化HttpGet对象，然后设置请求头以接受特定的元数据内容类型。最后，它调用execute方法来执行请求，并将请求、URL及操作描述传递进去以返回可关闭的Http响应。,执行HTTP GET请求以从URL检索服务元数据,"private CloseableHttpResponse executeInitializrMetadataRetrieval(String url) {
+		HttpGet request = new HttpGet(url);
+		request.setHeader(new BasicHeader(HttpHeaders.ACCEPT, ACCEPT_META_DATA));
+		return execute(request, url, ""retrieve metadata"");
+	}","Retrieves the meta-data of the service at the specified URL.
+@param url the URL
+@return the response",
+Binder.bind,"Binds a specified Bindable target by converting a property name string to a ConfigurationPropertyName, and then delegating to another bind method using property sources tied to this binder. It uses a bind handler, which may be null, to manage the binding process.",通过配置属性名称并使用属性源绑定目标Bindable对象,"public <T> BindResult<T> bind(String name, Bindable<T> target, BindHandler handler) {
+		return bind(ConfigurationPropertyName.of(name), target, handler);
+	}","Bind the specified target {@link Bindable} using this binder's
+{@link ConfigurationPropertySource property sources}.
+@param name the configuration property name to bind
+@param target the target bindable
+@param handler the bind handler (may be {@code null})
+@param <T> the bound type
+@return the binding result (never {@code null})",
+MimeMappings.add,该方法在映射表中添加新的mime映射。它接受文件扩展名和mime类型作为参数，并将它们存储在名为'map'的映射对象中。如果指定扩展名已经存在映射，则返回之前的mime类型，否则返回null。,为文件扩展名添加新的mime映射，返回原映射,"public String add(String extension, String mimeType) {
+		Mapping previous = this.map.put(extension, new Mapping(extension, mimeType));
+		return (previous != null) ? previous.getMimeType() : null;
+	}","Add a new mime mapping.
+@param extension the file extension (excluding '.')
+@param mimeType the mime type to map
+@return any previous mapping or {@code null}",
+IOUtil.dirname,该方法接受一个表示文件路径的字符串作为参数，通过查找最后一个斜杠字符来定位文件所在的目录。若找不到斜杠，则返回原路径；否则，返回从起始位置到包括最后一个斜杠字符在内的子字符串，作为文件目录路径。,提取路径中的目录名，返回最后一个斜杠之前的子字符串。,"public static String dirname(String path)
+    {
+        int index = path.lastIndexOf('/');
+        if (index == -1) return path;
+        return path.substring(0, index + 1);
+    }","获取文件所在目录的路径
+@param path
+@return",
+Segment.combineByCustomDictionary,此方法通过用户自定义词典合并给定的粗分词节点列表。首先，将词节点列表转换为数组。方法使用双重词汇典结构（DAT和BinTrie）进行合并。在DAT合并中，对词节点进行状态转移并在存在合并输出时合并词节点。在BinTrie合并中，经过状态检查并在存在累积值时进行词节点的合并。最终的合并结果被更新回列表并返回。,使用自定义词典合并词节点列表，返回合并后的结果。,"protected static List<Vertex> combineByCustomDictionary(List<Vertex> vertexList, DoubleArrayTrie<CoreDictionary.Attribute> dat)
+    {
+        assert vertexList.size() >= 2 : ""vertexList至少包含 始##始 和 末##末"";
+        Vertex[] wordNet = new Vertex[vertexList.size()];
+        vertexList.toArray(wordNet);
+        // DAT合并
+        int length = wordNet.length - 1; // 跳过首尾
+        for (int i = 1; i < length; ++i)
+        {
+            int state = 1;
+            state = dat.transition(wordNet[i].realWord, state);
+            if (state > 0)
+            {
+                int to = i + 1;
+                int end = to;
+                CoreDictionary.Attribute value = dat.output(state);
+                for (; to < length; ++to)
+                {
+                    state = dat.transition(wordNet[to].realWord, state);
+                    if (state < 0) break;
+                    CoreDictionary.Attribute output = dat.output(state);
+                    if (output != null)
+                    {
+                        value = output;
+                        end = to + 1;
+                    }
+                }
+                if (value != null)
+                {
+                    combineWords(wordNet, i, end, value);
+                    i = end - 1;
+                }
+            }
+        }
+        // BinTrie合并
+        if (CustomDictionary.trie != null)
+        {
+            for (int i = 1; i < length; ++i)
+            {
+                if (wordNet[i] == null) continue;
+                BaseNode<CoreDictionary.Attribute> state = CustomDictionary.trie.transition(wordNet[i].realWord.toCharArray(), 0);
+                if (state != null)
+                {
+                    int to = i + 1;
+                    int end = to;
+                    CoreDictionary.Attribute value = state.getValue();
+                    for (; to < length; ++to)
+                    {
+                        if (wordNet[to] == null) continue;
+                        state = state.transition(wordNet[to].realWord.toCharArray(), 0);
+                        if (state == null) break;
+                        if (state.getValue() != null)
+                        {
+                            value = state.getValue();
+                            end = to + 1;
+                        }
+                    }
+                    if (value != null)
+                    {
+                        combineWords(wordNet, i, end, value);
+                        i = end - 1;
+                    }
+                }
+            }
+        }
+        vertexList.clear();
+        for (Vertex vertex : wordNet)
+        {
+            if (vertex != null) vertexList.add(vertex);
+        }
+        return vertexList;
+    }","使用用户词典合并粗分结果
+@param vertexList 粗分结果
+@param dat 用户自定义词典
+@return 合并后的结果",
+ProjectGenerationRequest.resolveArtifactId,该方法用于解析需要使用的artifactId。如果artifactId字段不为空，则直接返回其值。如果artifactId为空，则检查output字段，将其作为备选项。若output字段不为空，方法会截取其最后一个点之前的子字符串作为artifactId，如果output中没有点，则返回完整的output字符串。若output也为空，则返回null。,解析artifactId，使用artifactId字段或从output推导其值,"protected String resolveArtifactId() {
+		if (this.artifactId != null) {
+			return this.artifactId;
+		}
+		if (this.output != null) {
+			int i = this.output.lastIndexOf('.');
+			return (i != -1) ? this.output.substring(0, i) : this.output;
+		}
+		return null;
+	}","Resolve the artifactId to use or {@code null} if it should not be customized.
+@return the artifactId",
+AutoConfigurationImportSelector.getCandidateConfigurations,该方法返回应考虑的自动配置类名。默认情况下，方法使用SpringFactoriesLoader从META-INF/spring.factories加载候选自动配置类。步骤包括调用SpringFactoriesLoader.loadFactoryNames加载配置类名，然后确保加载到的配置列表不为空，否则抛出异常。,加载并返回自动配置类名列表,"protected List<String> getCandidateConfigurations(AnnotationMetadata metadata,
+			AnnotationAttributes attributes) {
+		List<String> configurations = SpringFactoriesLoader.loadFactoryNames(
+				getSpringFactoriesLoaderFactoryClass(), getBeanClassLoader());
+		Assert.notEmpty(configurations,
+				""No auto configuration classes found in META-INF/spring.factories. If you ""
+						+ ""are using a custom packaging, make sure that file is correct."");
+		return configurations;
+	}","Return the auto-configuration class names that should be considered. By default
+this method will load candidates using {@link SpringFactoriesLoader} with
+{@link #getSpringFactoriesLoaderFactoryClass()}.
+@param metadata the source metadata
+@param attributes the {@link #getAttributes(AnnotationMetadata) annotation
+attributes}
+@return a list of candidate configurations",
+Launcher.launch,该方法通过调用JarFile.registerUrlProtocolHandler()来注册URL协议处理程序，然后通过createClassLoader()使用定义的类路径存档来创建自定义类加载器。最后，它调用另一个重载的launch()方法，该方法需要参数args，主类名称，以及之前创建的类加载器。这是应用程序启动的初始入口点，应该由子类中的main方法调用。,通过自定义类加载器启动应用程序并注册URL协议处理程序。,"protected void launch(String[] args) throws Exception {
+		JarFile.registerUrlProtocolHandler();
+		ClassLoader classLoader = createClassLoader(getClassPathArchives());
+		launch(args, getMainClass(), classLoader);
+	}","Launch the application. This method is the initial entry point that should be
+called by a subclass {@code public static void main(String[] args)} method.
+@param args the incoming arguments
+@throws Exception if the application fails to launch",
+FeatureIndex.calcCost,calcCost方法通过遍历路径参数path中的fvector，计算路径的特征函数代价。方法首先将path的cost初始化为0.0。如果alphaFloat_不为null，则使用alphaFloat_数组计算特征索引对应的权重累加到变量c中，最终将累计结果乘以costFactor_并设置为path.cost。如果alphaFloat_为null，替代地使用alpha_数组以相同方式计算cost。此方法根据fvector中的索引值、路径两端节点的y值用于选择相应的权重并计算转移代价。,计算路径特征函数代价，更新路径cost属性。,"public void calcCost(Path path)
+    {
+        path.cost = 0.0;
+        if (alphaFloat_ != null)
+        {
+            float c = 0.0f;
+            for (int i = 0; path.fvector.get(i) != -1; i++)
+            {
+                c += alphaFloat_[path.fvector.get(i) + path.lnode.y * y_.size() + path.rnode.y];
+            }
+            path.cost = costFactor_ * c;
+        }
+        else
+        {
+            double c = 0.0;
+            for (int i = 0; path.fvector.get(i) != -1; i++)
+            {
+                c += alpha_[path.fvector.get(i) + path.lnode.y * y_.size() + path.rnode.y];
+            }
+            path.cost = costFactor_ * c;
+        }
+    }","计算转移特征函数的代价
+
+@param path 边",
+AbstractErrorWebExceptionHandler.isTraceEnabled,检查指定的服务器请求中是否存在'trace'参数，并判断是否启用了错误跟踪。方法从请求中获取'trace'参数的值，默认为'false'，如果参数值不等于字符串'false'，则返回true，表明已请求错误跟踪，否则返回false。,检查请求中'trace'参数以确定跟踪是否启用,"protected boolean isTraceEnabled(ServerRequest request) {
+		String parameter = request.queryParam(""trace"").orElse(""false"");
+		return !""false"".equalsIgnoreCase(parameter);
+	}","Check whether the trace attribute has been set on the given request.
+@param request the source request
+@return {@code true} if the error trace has been requested, {@code false} otherwise",
+IOUtil.writeLine,该方法通过使用BufferedWriter对象将传递的String数组写入输出，每个字符串元素之间使用制表符分割，最后一个元素后面没有制表符。如果有写入失败，将抛出IOException。,使用BufferedWriter逐行写入字符串数组，元素之间用制表符分隔。,"public static void writeLine(BufferedWriter bw, String... params) throws IOException
+    {
+        for (int i = 0; i < params.length - 1; i++)
+        {
+            bw.write(params[i]);
+            bw.write('\t');
+        }
+        bw.write(params[params.length - 1]);
+    }","写数组，用制表符分割
+@param bw
+@param params
+@throws IOException",
+AhoCorasickDoubleArrayTrie.get,此方法用于根据提供的键在AhoCorasickDoubleArrayTrie中获取对应的值。首先，它调用exactMatchSearch(String key)来查找键的匹配索引。如果找到有效索引，则返回对应索引位置的值数组中的值。如果索引无效，则返回null。,根据键检索值，若存在则返回对应结果,"public V get(String key)
+    {
+        int index = exactMatchSearch(key);
+        if (index >= 0)
+        {
+            return v[index];
+        }
+
+        return null;
+    }","获取值
+
+@param key 键
+@return",
+ContinuousDistributions.LogGamma,此方法计算给定实数Z的对数伽马函数值。首先，它计算一个辅助变量S，该变量涉及Z的分数序列运算。接着，使用S来计算对数伽马值LG，LG是基于Z及其对数运算结果组合得到的。最终返回的LG值表示输入Z的对数伽马函数值。此方法实现了一种高精度的近似算法，用于估算伽马函数的对数。,计算输入值的对数伽马函数并返回结果,"public static double LogGamma(double Z)
+    {
+        double S = 1.0 + 76.18009173 / Z - 86.50532033 / (Z + 1.0) + 24.01409822 / (Z + 2.0) - 1.231739516 / (Z + 3.0) + 0.00120858003 / (Z + 4.0) - 0.00000536382 / (Z + 5.0);
+        double LG = (Z - 0.5) * Math.log(Z + 4.5) - (Z + 4.5) + Math.log(S * 2.50662827465);
+
+        return LG;
+    }","Log Gamma Function
+
+@param Z
+@return",
+ChangedFile.getRelativeName,方法getRelativeName返回文件相对于源文件夹的名称。首先，通过调用getAbsoluteFile()方法获取文件夹和文件的绝对File对象。接着，用StringUtils.cleanPath清理路径，确保路径分隔符一致。然后，使用Assert.state确保文件实际上位于源文件夹中。如果验证通过，返回路径中去除源文件夹路径前缀的部分。,返回文件相对于源文件夹的路径名称,"public String getRelativeName() {
+		File folder = this.sourceFolder.getAbsoluteFile();
+		File file = this.file.getAbsoluteFile();
+		String folderName = StringUtils.cleanPath(folder.getPath());
+		String fileName = StringUtils.cleanPath(file.getPath());
+		Assert.state(fileName.startsWith(folderName), () -> ""The file "" + fileName
+				+ "" is not contained in the source folder "" + folderName);
+		return fileName.substring(folderName.length() + 1);
+	}","Return the name of the file relative to the source folder.
+@return the relative name",
+FileSystemWatcher.addSourceFolders,该方法用于添加要监视的源文件夹。在调用该方法时，会首先检查传入的文件夹集合是否为空。然后，该方法在同步监视器的块内迭代地将每个文件夹添加到监视列表中。请注意，此方法在监视器开始后不能被调用。,添加要监视的源文件夹，每个文件夹在同步块中被处理。,"public void addSourceFolders(Iterable<File> folders) {
+		Assert.notNull(folders, ""Folders must not be null"");
+		synchronized (this.monitor) {
+			for (File folder : folders) {
+				addSourceFolder(folder);
+			}
+		}
+	}","Add source folders to monitor. Cannot be called after the watcher has been
+{@link #start() started}.
+@param folders the folders to monitor",
+MaxEntModel.predict,该方法接收一个包含上下文字符串的集合，并将其转换为字符串数组后，调用另一个重载的 predict 方法来进行预测生成分布。,将上下文集合转换为字符串数组并调用重载 predict 方法,"public final List<Pair<String, Double>> predict(Collection<String> context)
+    {
+        return predict(context.toArray(new String[0]));
+    }","预测分布
+
+@param context
+@return",
+AbstractLoggingSystem.getSpringConfigLocations,该方法返回当前系统的Spring配置文件路径。最初通过getStandardConfigLocations()获取标准的配置路径，然后对每个路径进行处理，将其后缀替换为"-spring."形式，返回修改后的路径数组。,获取并修改Spring配置文件路径,"protected String[] getSpringConfigLocations() {
+		String[] locations = getStandardConfigLocations();
+		for (int i = 0; i < locations.length; i++) {
+			String extension = StringUtils.getFilenameExtension(locations[i]);
+			locations[i] = locations[i].substring(0,
+					locations[i].length() - extension.length() - 1) + ""-spring.""
+					+ extension;
+		}
+		return locations;
+	}","Return the spring config locations for this system. By default this method returns
+a set of locations based on {@link #getStandardConfigLocations()}.
+@return the spring config locations
+@see #getSpringInitializationConfig()",
+SpringApplication.run,SpringApplication.run方法是一个静态辅助方法，用于从指定的主要源启动Spring应用程序。该方法使用默认设置运行应用程序。通过传入要加载的主要源类和应用程序参数数组，返回一个ConfigurableApplicationContext实例，代表正在运行的应用程序环境。具体实现中，该方法调用了另一个重载版本的run方法，并将主要源类封装为数组传递给该方法。,运行Spring应用程序并返回其上下文，使用默认设置。,"public static ConfigurableApplicationContext run(Class<?> primarySource,
+			String... args) {
+		return run(new Class<?>[] { primarySource }, args);
+	}","Static helper that can be used to run a {@link SpringApplication} from the
+specified source using default settings.
+@param primarySource the primary source to load
+@param args the application arguments (usually passed from a Java main method)
+@return the running {@link ApplicationContext}",
+AbstractFilterRegistrationBean.setUrlPatterns,设置过滤器将注册的URL模式，替换之前指定的URL模式。方法首先检查传入的urlPatterns集合是否为null，然后将其转换为LinkedHashSet以移除重复并保持顺序。,设置过滤器的URL模式集合，替换现有模式。,"public void setUrlPatterns(Collection<String> urlPatterns) {
+		Assert.notNull(urlPatterns, ""UrlPatterns must not be null"");
+		this.urlPatterns = new LinkedHashSet<>(urlPatterns);
+	}","Set the URL patterns that the filter will be registered against. This will replace
+any previously specified URL patterns.
+@param urlPatterns the URL patterns
+@see #setServletRegistrationBeans
+@see #setServletNames",
+InfoPropertiesInfoContributor.copyIfSet,该方法用于检查给定的键是否在当前属性中有值。如果该键的值存在且不为空，则将此键和值拷贝到目标属性对象中。它通过从当前属性对象中获取键的值，使用StringUtils.hasText方法检查值是否为空，然后将键值对放入目标属性对象。,将给定键的非空值复制到目标属性对象中,"protected void copyIfSet(Properties target, String key) {
+		String value = this.properties.get(key);
+		if (StringUtils.hasText(value)) {
+			target.put(key, value);
+		}
+	}","Copy the specified key to the target {@link Properties} if it is set.
+@param target the target properties to update
+@param key the key",
+CustomDictionary.remove,该方法用于从CustomDictionary中移除指定的单词。首先，检查是否启用标准化配置，如果启用，则将单词进行字符转换。然后，检查trie对象是否为空。如果trie不为空，则从中移除指定的单词。需要注意的是，删除操作是动态的，不会持久化到词典文件。,移除指定的单词，动态操作不会保存到文件,"public static void remove(String key)
+    {
+        if (HanLP.Config.Normalization) key = CharTable.convert(key);
+        if (trie == null) return;
+        trie.remove(key);
+    }","删除单词<br>
+动态增删不会持久化到词典文件
+
+@param key",
+ProjectGenerationRequest.generateUrl,该方法生成用于项目生成的URI。首先，使用给定的serviceUrl初始化一个URIBuilder对象，接着通过determineProjectType方法确定项目类型，并设置其ID和操作路径。然后，检查并添加请求的各种参数（如dependencies、groupId、artifactId等）到URI中。最终生成并返回构建好的URI。如果出现URISyntaxException，则抛出ReportableException异常。,生成项目生成的URI，配置项目类型和参数,"URI generateUrl(InitializrServiceMetadata metadata) {
+		try {
+			URIBuilder builder = new URIBuilder(this.serviceUrl);
+			StringBuilder sb = new StringBuilder();
+			if (builder.getPath() != null) {
+				sb.append(builder.getPath());
+			}
+
+			ProjectType projectType = determineProjectType(metadata);
+			this.type = projectType.getId();
+			sb.append(projectType.getAction());
+			builder.setPath(sb.toString());
+
+			if (!this.dependencies.isEmpty()) {
+				builder.setParameter(""dependencies"",
+						StringUtils.collectionToCommaDelimitedString(this.dependencies));
+			}
+
+			if (this.groupId != null) {
+				builder.setParameter(""groupId"", this.groupId);
+			}
+			String resolvedArtifactId = resolveArtifactId();
+			if (resolvedArtifactId != null) {
+				builder.setParameter(""artifactId"", resolvedArtifactId);
+			}
+			if (this.version != null) {
+				builder.setParameter(""version"", this.version);
+			}
+			if (this.name != null) {
+				builder.setParameter(""name"", this.name);
+			}
+			if (this.description != null) {
+				builder.setParameter(""description"", this.description);
+			}
+			if (this.packageName != null) {
+				builder.setParameter(""packageName"", this.packageName);
+			}
+			if (this.type != null) {
+				builder.setParameter(""type"", projectType.getId());
+			}
+			if (this.packaging != null) {
+				builder.setParameter(""packaging"", this.packaging);
+			}
+			if (this.javaVersion != null) {
+				builder.setParameter(""javaVersion"", this.javaVersion);
+			}
+			if (this.language != null) {
+				builder.setParameter(""language"", this.language);
+			}
+			if (this.bootVersion != null) {
+				builder.setParameter(""bootVersion"", this.bootVersion);
+			}
+
+			return builder.build();
+		}
+		catch (URISyntaxException ex) {
+			throw new ReportableException(
+					""Invalid service URL ("" + ex.getMessage() + "")"");
+		}
+	}","Generates the URI to use to generate a project represented by this request.
+@param metadata the metadata that describes the service
+@return the project generation URI",
+CRFSegment.resizeArray,该方法通过创建一个新的数组并使用`System.arraycopy`复制原数组元素来调整字符串二维数组的大小。如果给定的数组长度与期望的大小相同，则返回原数组。否则，创建一个新数组，大小为参数指定的`size`，并将原数组中的元素复制到这个新数组中，然后返回新数组。,调整字符串二维数组的大小并返回新数组,"private static String[][] resizeArray(String[][] array, int size)
+    {
+        if (array.length == size) return array;
+        String[][] nArray = new String[size][];
+        System.arraycopy(array, 0, nArray, 0, size);
+        return nArray;
+    }","数组减肥，原子分词可能会导致表格比原来的短
+
+@param array
+@param size
+@return",
+FileUtils.removeDuplicatesFromOutputDirectory,该方法用于从输出目录中删除与源目录中重复存在的文件。通过递归扫描源目录，对于每一个检测到与输出目录中文件同名的文件，如果它是一个可写的文件且不是目录，则将其从输出目录中删除。,从输出目录删除在源目录中已存在的重复文件,"public static void removeDuplicatesFromOutputDirectory(File outputDirectory,
+			File originDirectory) {
+		if (originDirectory.isDirectory()) {
+			for (String name : originDirectory.list()) {
+				File targetFile = new File(outputDirectory, name);
+				if (targetFile.exists() && targetFile.canWrite()) {
+					if (!targetFile.isDirectory()) {
+						targetFile.delete();
+					}
+					else {
+						FileUtils.removeDuplicatesFromOutputDirectory(targetFile,
+								new File(originDirectory, name));
+					}
+				}
+			}
+		}
+	}","Utility to remove duplicate files from an ""output"" directory if they already exist
+in an ""origin"". Recursively scans the origin directory looking for files (not
+directories) that exist in both places and deleting the copy.
+@param outputDirectory the output directory
+@param originDirectory the origin directory",
+HealthEndpoint.healthForComponentInstance,该方法返回指定组件管理的特定实例的健康状态，如果该组件不是CompositeHealthIndicator或该实例不存在，则返回null。方法通过从传递的healthIndicator对象中获取嵌套健康指标，然后获取实例的嵌套健康指标，如果存在，则调用其health()方法返回健康状态。,获取组件实例的健康状态，如果实例不存在则返回null。,"@ReadOperation
+	public Health healthForComponentInstance(@Selector String component,
+			@Selector String instance) {
+		HealthIndicator indicator = getNestedHealthIndicator(this.healthIndicator,
+				component);
+		HealthIndicator nestedIndicator = getNestedHealthIndicator(indicator, instance);
+		return (nestedIndicator != null) ? nestedIndicator.health() : null;
+	}","Return the {@link Health} of a particular {@code instance} managed by the specified
+{@code component} or {@code null} if that particular component is not a
+{@link CompositeHealthIndicator} or if such instance does not exist.
+@param component the name of a particular {@link CompositeHealthIndicator}
+@param instance the name of an instance managed by that component
+@return the {@link Health} for the component instance of {@code null}",
+Cluster.remove_document,"This method attempts to remove the specified document from a cluster. It iterates over the list of documents and if it finds a document that equals the provided Document object, it recursively calls itself with the document as the parameter. However, the current implementation might lead to infinite recursion if the document is found.","Attempts to remove specified document from cluster, potentially causing infinite recursion.","void remove_document(Document doc)
+    {
+        for (Document<K> document : documents_)
+        {
+            if (document.equals(doc))
+            {
+                remove_document(doc);
+                return;
+            }
+        }
+    }","Remove a document from this cluster.
+
+@param doc the pointer of a document object",
+BinTrie.keySet,该方法`keySet`返回当前BinTrie树中所有键的集合。使用TreeSet存储键以确保键按自然顺序排序。方法通过遍历entrySet集合，将每个条目的键添加到TreeSet中，最终返回该TreeSet。,返回所有键的有序集合,"public Set<String> keySet()
+    {
+        TreeSet<String> keySet = new TreeSet<String>();
+        for (Map.Entry<String, V> entry : entrySet())
+        {
+            keySet.add(entry.getKey());
+        }
+
+        return keySet;
+    }","键集合
+@return",
+ClusterAnalyzer.evaluate,该方法用于评估分类算法的性能。首先检查输入的文件夹路径是否有效，然后初始化一个ClusterAnalyzer对象。遍历根目录下的每个文件夹，读取文件内容并将其添加到分析器中。在完成文档加载后，根据指定的算法（KMeans或Repeated Bisection）进行聚类。计算每个类别的F1分数，并最终返回加权平均F1分数。,评估分类算法，读取文件夹，加载文档，进行聚类计算F1分数。,"public static double evaluate(String folderPath, String algorithm)
+    {
+        if (folderPath == null) throw new IllegalArgumentException(""参数 folderPath == null"");
+        File root = new File(folderPath);
+        if (!root.exists()) throw new IllegalArgumentException(String.format(""目录 %s 不存在"", root.getAbsolutePath()));
+        if (!root.isDirectory())
+            throw new IllegalArgumentException(String.format(""目录 %s 不是一个目录"", root.getAbsolutePath()));
+
+        ClusterAnalyzer<String> analyzer = new ClusterAnalyzer<String>();
+        File[] folders = root.listFiles();
+        if (folders == null) return 1.;
+        logger.start(""根目录:%s\n加载中...\n"", folderPath);
+        int docSize = 0;
+        int[] ni = new int[folders.length];
+        String[] cat = new String[folders.length];
+        int offset = 0;
+        for (File folder : folders)
+        {
+            if (folder.isFile()) continue;
+            File[] files = folder.listFiles();
+            if (files == null) continue;
+            String category = folder.getName();
+            cat[offset] = category;
+            logger.out(""[%s]..."", category);
+            int b = 0;
+            int e = files.length;
+
+            int logEvery = (int) Math.ceil((e - b) / 10000f);
+            for (int i = b; i < e; i++)
+            {
+                analyzer.addDocument(folder.getName() + "" "" + files[i].getName(), IOUtil.readTxt(files[i].getAbsolutePath()));
+                if (i % logEvery == 0)
+                {
+                    logger.out(""%c[%s]...%.2f%%"", 13, category, MathUtility.percentage(i - b + 1, e - b));
+                }
+                ++docSize;
+                ++ni[offset];
+            }
+            logger.out("" %d 篇文档\n"", e - b);
+            ++offset;
+        }
+        logger.finish("" 加载了 %d 个类目,共 %d 篇文档\n"", folders.length, docSize);
+        logger.start(algorithm + ""聚类中..."");
+        List<Set<String>> clusterList = algorithm.replaceAll(""[-\\s]"", """").toLowerCase().equals(""kmeans"") ?
+            analyzer.kmeans(ni.length) : analyzer.repeatedBisection(ni.length);
+        logger.finish("" 完毕。\n"");
+        double[] fi = new double[ni.length];
+        for (int i = 0; i < ni.length; i++)
+        {
+            for (Set<String> j : clusterList)
+            {
+                int nij = 0;
+                for (String d : j)
+                {
+                    if (d.startsWith(cat[i]))
+                        ++nij;
+                }
+                if (nij == 0) continue;
+                double p = nij / (double) (j.size());
+                double r = nij / (double) (ni[i]);
+                double f = 2 * p * r / (p + r);
+                fi[i] = Math.max(fi[i], f);
+            }
+        }
+        double f = 0;
+        for (int i = 0; i < fi.length; i++)
+        {
+            f += fi[i] * ni[i] / docSize;
+        }
+        return f;
+    }","训练模型
+
+@param folderPath 分类语料的根目录.目录必须满足如下结构:<br>
+根目录<br>
+├── 分类A<br>
+│   └── 1.txt<br>
+│   └── 2.txt<br>
+│   └── 3.txt<br>
+├── 分类B<br>
+│   └── 1.txt<br>
+│   └── ...<br>
+└── ...<br>
+文件不一定需要用数字命名,也不需要以txt作为后缀名,但一定需要是文本文件.
+@param algorithm  kmeans 或 repeated bisection
+@throws IOException 任何可能的IO异常",
+Sentence.toWordTagArray,该方法将当前对象的句子转化为一个包含词和词性标签的二维数组。首先调用toSimpleWordList方法获取词对象列表，然后初始化一个有两行的字符串二维数组，每行的长度为词列表的大小。遍历词列表，将每个词对象的值和标签分别赋予到数组的两行中，最终返回该二维数组。,将句子转换为一个包含词和词性标签的二维数组。,"public String[][] toWordTagArray()
+    {
+        List<Word> wordList = toSimpleWordList();
+        String[][] pair = new String[2][wordList.size()];
+        Iterator<Word> iterator = wordList.iterator();
+        for (int i = 0; i < pair[0].length; i++)
+        {
+            Word word = iterator.next();
+            pair[0][i] = word.value;
+            pair[1][i] = word.label;
+        }
+        return pair;
+    }","word pos
+
+@return",
+LoggingApplicationListener.initialize,该方法根据通过环境（Environment）和类路径表达的偏好初始化日志系统。具体步骤包括：应用环境相关的日志系统属性，获取日志文件并应用到系统属性，初始化早期日志级别，设置日志系统和日志文件到环境，初始化最终日志级别，并根据需要注册关闭钩子。,初始化日志系统，根据环境和类路径设置日志配置。,"protected void initialize(ConfigurableEnvironment environment,
+			ClassLoader classLoader) {
+		new LoggingSystemProperties(environment).apply();
+		LogFile logFile = LogFile.get(environment);
+		if (logFile != null) {
+			logFile.applyToSystemProperties();
+		}
+		initializeEarlyLoggingLevel(environment);
+		initializeSystem(environment, this.loggingSystem, logFile);
+		initializeFinalLoggingLevels(environment, this.loggingSystem);
+		registerShutdownHookIfNecessary(environment, this.loggingSystem);
+	}","Initialize the logging system according to preferences expressed through the
+{@link Environment} and the classpath.
+@param environment the environment
+@param classLoader the classloader",
+SpringApplication.load,该方法将指定的source加载到应用程序上下文中。首先检查调试日志，然后创建一个BeanDefinitionLoader实例用于加载Bean定义。根据可用的beanNameGenerator、resourceLoader和environment，配置BeanDefinitionLoader。在完成配置后，调用loader的load方法实际加载bean。,将sources加载到应用上下文中,"protected void load(ApplicationContext context, Object[] sources) {
+		if (logger.isDebugEnabled()) {
+			logger.debug(
+					""Loading source "" + StringUtils.arrayToCommaDelimitedString(sources));
+		}
+		BeanDefinitionLoader loader = createBeanDefinitionLoader(
+				getBeanDefinitionRegistry(context), sources);
+		if (this.beanNameGenerator != null) {
+			loader.setBeanNameGenerator(this.beanNameGenerator);
+		}
+		if (this.resourceLoader != null) {
+			loader.setResourceLoader(this.resourceLoader);
+		}
+		if (this.environment != null) {
+			loader.setEnvironment(this.environment);
+		}
+		loader.load();
+	}","Load beans into the application context.
+@param context the context to load beans into
+@param sources the sources to load",
+Segment.seg,该方法对输入的字符数组进行分词。首先检查输入是否为null，并断言不为空。如果启用了名为Normalization的配置，则通过调用CharTable.normalization进行字符归一化处理。最后，调用segSentence方法执行实际的分词处理，并返回包含分词结果的Term对象列表。,分词器方法，处理字符数组并返回分词结果列表。,"public List<Term> seg(char[] text)
+    {
+        assert text != null;
+        if (HanLP.Config.Normalization)
+        {
+            CharTable.normalization(text);
+        }
+        return segSentence(text);
+    }","分词
+
+@param text 待分词文本
+@return 单词列表",
+AnnotationConfigServletWebApplicationContext.setBeanNameGenerator,The `setBeanNameGenerator` method in `AnnotationConfigServletWebApplicationContext` is used to set a custom `BeanNameGenerator` for use with the `AnnotatedBeanDefinitionReader` and `ClassPathBeanDefinitionScanner`. The method updates the `beanNameGenerator` in both the reader and scanner components of the application context and registers this generator as a singleton in the bean factory using a constant identifier. This configuration should be set before calling methods `register` and/or `scan` to ensure it takes effect during bean definition registration.,"Set custom `BeanNameGenerator` for reader and scanner, register it in the bean factory.","public void setBeanNameGenerator(BeanNameGenerator beanNameGenerator) {
+		this.reader.setBeanNameGenerator(beanNameGenerator);
+		this.scanner.setBeanNameGenerator(beanNameGenerator);
+		this.getBeanFactory().registerSingleton(
+				AnnotationConfigUtils.CONFIGURATION_BEAN_NAME_GENERATOR,
+				beanNameGenerator);
+	}","Provide a custom {@link BeanNameGenerator} for use with
+{@link AnnotatedBeanDefinitionReader} and/or
+{@link ClassPathBeanDefinitionScanner}, if any.
+<p>
+Default is
+{@link org.springframework.context.annotation.AnnotationBeanNameGenerator}.
+<p>
+Any call to this method must occur prior to calls to {@link #register(Class...)}
+and/or {@link #scan(String...)}.
+@param beanNameGenerator the bean name generator
+@see AnnotatedBeanDefinitionReader#setBeanNameGenerator
+@see ClassPathBeanDefinitionScanner#setBeanNameGenerator",
+DocumentRoot.getValidDirectory,该方法返回一个绝对文档根目录，如果该目录有效，则调试输出该目录，否则记录一个警告并返回null。方法依次从不同的来源（directory、WarFileDocumentRoot、ExplodedWarFileDocumentRoot、CommonDocumentRoot）尝试获取有效目录，直到找到一个有效路径为止。若日志调试级别启用，则会记录无文档根目录警告或打印所找到的文档根目录。,获取有效文档目录，或记录警告并返回null。,"public final File getValidDirectory() {
+		File file = this.directory;
+		file = (file != null) ? file : getWarFileDocumentRoot();
+		file = (file != null) ? file : getExplodedWarFileDocumentRoot();
+		file = (file != null) ? file : getCommonDocumentRoot();
+		if (file == null && this.logger.isDebugEnabled()) {
+			logNoDocumentRoots();
+		}
+		else if (this.logger.isDebugEnabled()) {
+			this.logger.debug(""Document root: "" + file);
+		}
+		return file;
+	}","Returns the absolute document root when it points to a valid directory, logging a
+warning and returning {@code null} otherwise.
+@return the valid document root",
+ConfigurationPropertiesReportEndpoint.safeSerialize,"This method safely serializes a given bean into a map using an ObjectMapper. It attempts to convert the provided bean into a map using the convertValue method of ObjectMapper. If the serialization process fails, it catches the exception and returns a map containing an error message specifying the prefix of the bean that could not be serialized. This approach avoids throwing exceptions and provides an error message within the result map instead.","Safely serialize a bean to a map, returning an error map if serialization fails.","@SuppressWarnings(""unchecked"")
+	private Map<String, Object> safeSerialize(ObjectMapper mapper, Object bean,
+			String prefix) {
+		try {
+			return new HashMap<>(mapper.convertValue(bean, Map.class));
+		}
+		catch (Exception ex) {
+			return new HashMap<>(Collections.singletonMap(""error"",
+					""Cannot serialize '"" + prefix + ""'""));
+		}
+	}","Cautiously serialize the bean to a map (returning a map with an error message
+instead of throwing an exception if there is a problem).
+@param mapper the object mapper
+@param bean the source bean
+@param prefix the prefix
+@return the serialized instance",
+JpaProperties.determineDatabase,该方法用于确定要使用的数据库。如果实例变量'database'已经存在，则返回该数据库; 否则，调用'DatabaseLookup.getDatabase'方法获取数据源对应的数据库。该方法已弃用，建议使用JPA容器来自动检测要使用的数据库。,返回数据库配置或通过数据源获取数据库,"@Deprecated
+	public Database determineDatabase(DataSource dataSource) {
+		if (this.database != null) {
+			return this.database;
+		}
+		return DatabaseLookup.getDatabase(dataSource);
+	}","Determine the {@link Database} to use based on this configuration and the primary
+{@link DataSource}.
+@param dataSource the auto-configured data source
+@return {@code Database}
+@deprecated since 2.2.0 in favor of letting the JPA container detect the database
+to use.",
+DocVectorModel.nearest,"该方法接收一个字符串查询参数，并调用 `queryNearest` 方法以获得与该查询最相似的前 10 个文档。返回类型为 `List<Map.Entry<Integer, Float>>`，其中每个条目包含文档的唯一标识符和相似度得分。此方法用于从大型文档集中检索最符合查询的文档，以实现高效的信息查找。",返回与查询最相似的10个文档,"public List<Map.Entry<Integer, Float>> nearest(String query)
+    {
+        return queryNearest(query, 10);
+    }","查询最相似的前10个文档
+
+@param query 查询语句（或者说一个文档的内容）
+@return",
+AstUtils.hasAtLeastOneAnnotation,该方法检查给定的AnnotatedNode是否具有指定的一个或多个注解。通过迭代节点的所有注解，与提供的注解列表进行简单模式匹配，只要找到一个匹配就返回true，如果没有匹配，返回false。这是通过逐个检查每个注解节点的类名来实现匹配的。,检查节点上是否包含指定的注解,"public static boolean hasAtLeastOneAnnotation(AnnotatedNode node,
+			String... annotations) {
+		for (AnnotationNode annotationNode : node.getAnnotations()) {
+			for (String annotation : annotations) {
+				if (PatternMatchUtils.simpleMatch(annotation,
+						annotationNode.getClassNode().getName())) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}","Determine if an {@link AnnotatedNode} has one or more of the specified annotations.
+N.B. the annotation type names are not normally fully qualified.
+@param node the node to examine
+@param annotations the annotations to look for
+@return {@code true} if at least one of the annotations is found, otherwise
+{@code false}",
+RestTemplateBuilder.messageConverters,此方法用于设置将在RestTemplate中使用的HttpMessageConverters，通过该方法传入的转换器将替换任何先前配置的转换器。若调用此方法，将会用所提供的messageConverters列表替换RestTemplate的默认转换器。输入参数是一个HttpMessageConverter数组，在方法内部，首先使用Assert.notNull验证输入不为空，然后将数组转换为列表并传递给另一个重载方法进行进一步处理，最终返回一个新的RestTemplateBuilder实例。,配置RestTemplate使用的HttpMessageConverters，替换默认转换器。,"public RestTemplateBuilder messageConverters(
+			HttpMessageConverter<?>... messageConverters) {
+		Assert.notNull(messageConverters, ""MessageConverters must not be null"");
+		return messageConverters(Arrays.asList(messageConverters));
+	}","Set the {@link HttpMessageConverter HttpMessageConverters} that should be used with
+the {@link RestTemplate}. Setting this value will replace any previously configured
+converters and any converters configured on the builder will replace RestTemplate's
+default converters.
+@param messageConverters the converters to set
+@return a new builder instance
+@see #additionalMessageConverters(HttpMessageConverter...)",
+WebServiceTemplateBuilder.customizers,该方法用于设置将应用于WebServiceTemplate的WebServiceTemplateCustomizer实例。这些定制器按添加顺序在构建器配置应用之后被应用。此方法首先断言传入的customizers数组不为空，然后将这些定制器转换为一个列表并传递给另一个重载的customizers方法。设置此值将替换任何先前配置的定制器。,设置WebServiceTemplate的定制器，替换现有配置。,"public WebServiceTemplateBuilder customizers(
+			WebServiceTemplateCustomizer... customizers) {
+		Assert.notNull(customizers, ""Customizers must not be null"");
+		return customizers(Arrays.asList(customizers));
+	}","Set {@link WebServiceTemplateCustomizer WebServiceTemplateCustomizers} that should
+be applied to the {@link WebServiceTemplate}. Customizers are applied in the order
+that they were added after builder configuration has been applied. Setting this
+value will replace any previously configured customizers.
+@param customizers the customizers to set
+@return a new builder instance
+@see #additionalCustomizers(WebServiceTemplateCustomizer...)",
+SpringApplication.createApplicationContext,此方法负责创建Spring应用程序的ApplicationContext。它首先检查是否已经显式设置了applicationContextClass。如果没有，根据webApplicationType选择相应的默认ApplicationContext类（SERVLET、REACTIVE或其他）。若选择过程中发生ClassNotFoundException，则抛出异常，提示用户指定applicationContextClass。最后，使用BeanUtils.instantiateClass实例化并返回ApplicationContext对象。,创建并返回合适的ApplicationContext实例。,"protected ConfigurableApplicationContext createApplicationContext() {
+		Class<?> contextClass = this.applicationContextClass;
+		if (contextClass == null) {
+			try {
+				switch (this.webApplicationType) {
+				case SERVLET:
+					contextClass = Class.forName(DEFAULT_SERVLET_WEB_CONTEXT_CLASS);
+					break;
+				case REACTIVE:
+					contextClass = Class.forName(DEFAULT_REACTIVE_WEB_CONTEXT_CLASS);
+					break;
+				default:
+					contextClass = Class.forName(DEFAULT_CONTEXT_CLASS);
+				}
+			}
+			catch (ClassNotFoundException ex) {
+				throw new IllegalStateException(
+						""Unable create a default ApplicationContext, ""
+								+ ""please specify an ApplicationContextClass"",
+						ex);
+			}
+		}
+		return (ConfigurableApplicationContext) BeanUtils.instantiateClass(contextClass);
+	}","Strategy method used to create the {@link ApplicationContext}. By default this
+method will respect any explicitly set application context or application context
+class before falling back to a suitable default.
+@return the application context (not yet refreshed)
+@see #setApplicationContextClass(Class)",
+CloudFoundryCustomContextPathExample.servletWebServerFactory,该方法定义了一个TomcatServletWebServerFactory bean，重写了其prepareContext方法。此方法在Tomcat服务器中添加了一个名为StandardContext的新上下文，以提供特定于Cloud Foundry应用程序的路径"/cloudfoundryapplication"。该上下文配置了生命周期监听器、Servlet容器初始化器，并允许跨上下文访问，然后将其添加到主机。,设置Tomcat服务器自定义上下文路径为“/cloudfoundryapplication”,"@Bean
+	public TomcatServletWebServerFactory servletWebServerFactory() {
+		return new TomcatServletWebServerFactory() {
+
+			@Override
+			protected void prepareContext(Host host,
+					ServletContextInitializer[] initializers) {
+				super.prepareContext(host, initializers);
+				StandardContext child = new StandardContext();
+				child.addLifecycleListener(new Tomcat.FixContextListener());
+				child.setPath(""/cloudfoundryapplication"");
+				ServletContainerInitializer initializer = getServletContextInitializer(
+						getContextPath());
+				child.addServletContainerInitializer(initializer, Collections.emptySet());
+				child.setCrossContext(true);
+				host.addChild(child);
+			}
+
+		};
+	}",tag::configuration[],
+LogFile.applyTo,将日志文件详细信息应用到指定的Properties对象，将路径信息写入LOG_PATH键，将日志文件的字符串表示写入LOG_FILE键。,应用日志文件细节到Properties对象,"public void applyTo(Properties properties) {
+		put(properties, LoggingSystemProperties.LOG_PATH, this.path);
+		put(properties, LoggingSystemProperties.LOG_FILE, toString());
+	}","Apply log file details to {@code LOG_PATH} and {@code LOG_FILE} map entries.
+@param properties the properties to apply to",
+SpringApplication.logStartupProfileInfo,该方法用于记录Spring应用启动过程中环境配置的活跃profile信息。当日志级别设为信息级别（Info）时，它会检查应用上下文的活跃profile数组。如果没有设置活跃profile，会输出默认的profile数组作为后备使用。如果设定了活跃profile，它将输出这些profile的信息。这帮助开发者知道应用在启动时使用了哪些环境配置。,记录应用程序启动时的活跃profile信息,"protected void logStartupProfileInfo(ConfigurableApplicationContext context) {
+		Log log = getApplicationLog();
+		if (log.isInfoEnabled()) {
+			String[] activeProfiles = context.getEnvironment().getActiveProfiles();
+			if (ObjectUtils.isEmpty(activeProfiles)) {
+				String[] defaultProfiles = context.getEnvironment().getDefaultProfiles();
+				log.info(""No active profile set, falling back to default profiles: ""
+						+ StringUtils.arrayToCommaDelimitedString(defaultProfiles));
+			}
+			else {
+				log.info(""The following profiles are active: ""
+						+ StringUtils.arrayToCommaDelimitedString(activeProfiles));
+			}
+		}
+	}","Called to log active profile information.
+@param context the application context",
+JSONObject.putOpt,"该方法在参数name和value都不为null时，等效于调用put(name, value)，并将指定的属性添加到JSONObject对象中。若任一参数为null，则不执行任何操作，直接返回当前的JSONObject对象。这种设计避免了将null作为key或value插入JSONObject。",在name和value都不为null时添加属性到JSONObject；否则不操作。,"public JSONObject putOpt(String name, Object value) throws JSONException {
+		if (name == null || value == null) {
+			return this;
+		}
+		return put(name, value);
+	}","Equivalent to {@code put(name, value)} when both parameters are non-null; does
+nothing otherwise.
+@param name the name of the property
+@param value the value of the property
+@return this object.
+@throws JSONException if an error occurs",
+DoubleArrayTrie.commonPrefixSearchWithValue,"This method performs an optimized prefix search on a character array starting from a specified position. It utilizes a double array trie structure to find all common prefixes within the given range of characters. The search process involves traversing through a base and check array to check state transitions. It adds any matched prefix and its associated value to a linked list which is returned as the result. During the search, state transitions are calculated and checked for validity, ensuring that found prefixes correspond to words by verifying base and check conditions.","Performs prefix search in a character array using double array trie, returning matching prefixes and values.","public LinkedList<Map.Entry<String, V>> commonPrefixSearchWithValue(char[] keyChars, int begin)
+    {
+        int len = keyChars.length;
+        LinkedList<Map.Entry<String, V>> result = new LinkedList<Map.Entry<String, V>>();
+        int b = base[0];
+        int n;
+        int p;
+
+        for (int i = begin; i < len; ++i)
+        {
+            p = b;
+            n = base[p];
+            if (b == check[p] && n < 0)         // base[p] == check[p] && base[p] < 0 查到一个词
+            {
+                result.add(new AbstractMap.SimpleEntry<String, V>(new String(keyChars, begin, i - begin), v[-n - 1]));
+            }
+
+            p = b + (int) (keyChars[i]) + 1;    // 状态转移 p = base[char[i-1]] + char[i] + 1
+            // 下面这句可能产生下标越界，不如改为if (p < size && b == check[p])，或者多分配一些内存
+            if (b == check[p])                  // base[char[i-1]] == check[base[char[i-1]] + char[i] + 1]
+                b = base[p];
+            else
+                return result;
+        }
+
+        p = b;
+        n = base[p];
+
+        if (b == check[p] && n < 0)
+        {
+            result.add(new AbstractMap.SimpleEntry<String, V>(new String(keyChars, begin, len - begin), v[-n - 1]));
+        }
+
+        return result;
+    }","优化的前缀查询，可以复用字符数组
+
+@param keyChars
+@param begin
+@return",
+Restarter.start,"This method attempts to start the application by invoking the doStart method, which returns an error if the start fails. The method repeatedly tries to start the application and processes the resulting error using a provided FailureHandler. If the FailureHandler returns Outcome.ABORT, the start process is terminated. It throws an Exception if there are errors during the process.",Attempts to start an application and handle failures using a given FailureHandler.,"protected void start(FailureHandler failureHandler) throws Exception {
+		do {
+			Throwable error = doStart();
+			if (error == null) {
+				return;
+			}
+			if (failureHandler.handle(error) == Outcome.ABORT) {
+				return;
+			}
+		}
+		while (true);
+	}","Start the application.
+@param failureHandler a failure handler for application that won't start
+@throws Exception in case of errors",
+AbstractErrorController.resolveErrorView,该方法用于解析特定的错误视图。它依次调用已定义的ErrorViewResolver列表中的每一个解析器来尝试获取错误视图。如果某个解析器返回非空的ModelAndView，则该方法立即返回这个ModelAndView实例。如果没有找到合适的错误视图，则返回null，表示应使用默认配置。,解析错误视图，依次调用ErrorViewResolver，返回找到的ModelAndView或null。,"protected ModelAndView resolveErrorView(HttpServletRequest request,
+			HttpServletResponse response, HttpStatus status, Map<String, Object> model) {
+		for (ErrorViewResolver resolver : this.errorViewResolvers) {
+			ModelAndView modelAndView = resolver.resolveErrorView(request, status, model);
+			if (modelAndView != null) {
+				return modelAndView;
+			}
+		}
+		return null;
+	}","Resolve any specific error views. By default this method delegates to
+{@link ErrorViewResolver ErrorViewResolvers}.
+@param request the request
+@param response the response
+@param status the HTTP status
+@param model the suggested model
+@return a specific {@link ModelAndView} or {@code null} if the default should be
+used
+@since 1.4.0",
+RestTemplateBuilder.additionalInterceptors,"This method adds additional ClientHttpRequestInterceptors to the RestTemplate. It ensures the provided interceptors are not null and then calls an overloaded method with a list of these interceptors, returning a new RestTemplateBuilder instance.","Adds extra interceptors to RestTemplate, returning a new builder.","public RestTemplateBuilder additionalInterceptors(
+			ClientHttpRequestInterceptor... interceptors) {
+		Assert.notNull(interceptors, ""interceptors must not be null"");
+		return additionalInterceptors(Arrays.asList(interceptors));
+	}","Add additional {@link ClientHttpRequestInterceptor ClientHttpRequestInterceptors}
+that should be used with the {@link RestTemplate}.
+@param interceptors the interceptors to add
+@return a new builder instance
+@since 1.4.1
+@see #interceptors(ClientHttpRequestInterceptor...)",
+AutoConfigurationImportSelector.handleInvalidExcludes,处理指定的无效排除项，将每个无效排除项格式化为一个带有缩进的字符串，并抛出IllegalStateException异常，指明这些类不是自动配置类。,处理无效排除项，抛出IllegalStateException异常。,"protected void handleInvalidExcludes(List<String> invalidExcludes) {
+		StringBuilder message = new StringBuilder();
+		for (String exclude : invalidExcludes) {
+			message.append(""\t- "").append(exclude).append(String.format(""%n""));
+		}
+		throw new IllegalStateException(String
+				.format(""The following classes could not be excluded because they are""
+						+ "" not auto-configuration classes:%n%s"", message));
+	}","Handle any invalid excludes that have been specified.
+@param invalidExcludes the list of invalid excludes (will always have at least one
+element)",
+JSONArray.optLong,该方法从JSONArray指定的索引处获取一个值，并返回其长整型表示。如果该值不存在或不能被转换为长整型，则返回指定的默认值。实现过程中，首先通过opt方法获取给定索引的对象。然后使用JSON.toLong方法尝试将该对象转换为Long类型。如果转换得到的结果不为空，则返回此结果；否则，返回提供的默认值。,从JSONArray中获取长整型值，不存在或不可转换时返回默认值,"public long optLong(int index, long fallback) {
+		Object object = opt(index);
+		Long result = JSON.toLong(object);
+		return result != null ? result : fallback;
+	}","Returns the value at {@code index} if it exists and is a long or can be coerced to
+a long. Returns {@code fallback} otherwise.
+@param index the index to get the value from
+@param fallback the fallback value
+@return the value at {@code index} of {@code fallback}",
+AbstractClassifier.classify,使用已经训练的分类器对输入文本进行预测。首先，通过调用predict方法来计算可能的分类及其得分，并存储在scoreMap中。然后，利用CollectionUtility.max方法选择得分最高的分类返回。此方法可能抛出IllegalArgumentException或IllegalStateException。,调用predict方法对文本分类，返回最高得分的分类。,"@Override
+    public String classify(String text) throws IllegalArgumentException, IllegalStateException
+    {
+        Map<String, Double> scoreMap = predict(text);
+
+        return CollectionUtility.max(scoreMap);
+    }","使用一个训练出来的分类器来预测分类
+
+@param text
+@return
+@throws IllegalArgumentException
+@throws IllegalStateException",
+Graph.connect,"This method creates an edge between two nodes in a graph: the 'from' node and the 'to' node, both represented by their integer indices. The edge is defined with a weight and includes a label composed of the concatenated 'word' properties of the two vertexes connected by this edge. The method specifically adds a new 'EdgeFrom' object to the list of edges corresponding to the 'to' node, thereby establishing a directed connection from 'from' to 'to'.",Connects two graph nodes with a weighted edge.,"public void connect(int from, int to, double weight)
+    {
+        edgesTo[to].add(new EdgeFrom(from, weight, vertexes[from].word + '@' + vertexes[to].word));
+    }","连接两个节点
+@param from 起点
+@param to 终点
+@param weight 花费",
+DynamicRegistrationBean.getOrDeduceName,此方法用于为注册获取或推断名称。方法首先检查类变量(this.name)是否不为空，如果不为空，则返回该名称作为最终结果；否则，调用Conventions.getVariableName(value)方法，使用传入的对象value根据约定推断名称，并返回推断结果。,获取或推断注册名称，返回用户指定或约定名称。,"protected final String getOrDeduceName(Object value) {
+		return (this.name != null) ? this.name : Conventions.getVariableName(value);
+	}","Deduces the name for this registration. Will return user specified name or fallback
+to convention based naming.
+@param value the object used for convention based names
+@return the deduced name",
+PerceptronClassifier.evaluate,此方法对给定的corpus字符串执行评估操作。首先，使用readInstance方法将corpus与model.featureMap结合转换为Instance数组，随后调用evaluate方法对转换后的实例数组进行评估，并返回BinaryClassificationFMeasure对象作为结果。,对文本语料库进行评估，返回二分类的F度量值。,"public BinaryClassificationFMeasure evaluate(String corpus)
+    {
+        Instance[] instanceList = readInstance(corpus, model.featureMap);
+        return evaluate(instanceList);
+    }","评估
+
+@param corpus
+@return",

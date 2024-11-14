@@ -1,0 +1,1686 @@
+method_name,regular_summary,bpe_summary,original_code,docstring,human_score
+PersonDictionary.parsePattern,"This method processes two lists: a named entity recognition (NR) tag list (`nrList`) and a list of `Vertex` objects (`vertexList`) which represent the original untagged sequence. It matches patterns in person names using a series of NR cases (e.g., U and V), modifies the vertex list to accommodate these cases, and builds a pattern string. The method then uses an Aho-Corasick algorithm implementation (`trie`) to match these patterns against a trie structure. Upon a successful match, it verifies the name against some predefined conditions to filter out incorrect matches. If the name passes these checks, it inserts the recognized person name into a more refined graph (`wordNetOptimum`) at the appropriate offsets calculated from the vertex list, ensuring these references in `wordNetAll`. The method also considers edge cases, such as ensuring the last character of a surname is not the same as the first name characters, in order to avoid false positives.",Person name pattern matching and vertex list modification for optimized word net insertion.,"public static void parsePattern(List<NR> nrList, List<Vertex> vertexList, final WordNet wordNetOptimum, final WordNet wordNetAll)
+    {
+        // ���UV
+        ListIterator<Vertex> listIterator = vertexList.listIterator();
+        StringBuilder sbPattern = new StringBuilder(nrList.size());
+        NR preNR = NR.A;
+        boolean backUp = false;
+        int index = 0;
+        for (NR nr : nrList)
+        {
+            ++index;
+            Vertex current = listIterator.next();
+//            logger.trace(""{}/{}"", current.realWord, nr);
+            switch (nr)
+            {
+                case U:
+                    if (!backUp)
+                    {
+                        vertexList = new ArrayList<Vertex>(vertexList);
+                        listIterator = vertexList.listIterator(index);
+                        backUp = true;
+                    }
+                    sbPattern.append(NR.K.toString());
+                    sbPattern.append(NR.B.toString());
+                    preNR = B;
+                    listIterator.previous();
+                    String nowK = current.realWord.substring(0, current.realWord.length() - 1);
+                    String nowB = current.realWord.substring(current.realWord.length() - 1);
+                    listIterator.set(new Vertex(nowK));
+                    listIterator.next();
+                    listIterator.add(new Vertex(nowB));
+                    continue;
+                case V:
+                    if (!backUp)
+                    {
+                        vertexList = new ArrayList<Vertex>(vertexList);
+                        listIterator = vertexList.listIterator(index);
+                        backUp = true;
+                    }
+                    if (preNR == B)
+                    {
+                        sbPattern.append(NR.E.toString());  //BE
+                    }
+                    else
+                    {
+                        sbPattern.append(NR.D.toString());  //CD
+                    }
+                    sbPattern.append(NR.L.toString());
+                    // �Դ�Ҳ��һЩ�޸�
+                    listIterator.previous();
+                    String EorD = current.realWord.substring(0, 1);
+                    String L = current.realWord.substring(1, current.realWord.length());
+                    listIterator.set(new Vertex(EorD));
+                    listIterator.next();
+                    listIterator.add(new Vertex(L));
+                    continue;
+                default:
+                    sbPattern.append(nr.toString());
+                    break;
+            }
+            preNR = nr;
+        }
+        String pattern = sbPattern.toString();
+//        logger.trace(""ģʽ����{}"", pattern);
+//        logger.trace(""��Ӧ����{}"", vertexList);
+//        if (pattern.length() != vertexList.size())
+//        {
+//            logger.warn(""����ʶ��ģʽ����bug"", pattern, vertexList);
+//            return;
+//        }
+        final Vertex[] wordArray = vertexList.toArray(new Vertex[0]);
+        final int[] offsetArray = new int[wordArray.length];
+        offsetArray[0] = 0;
+        for (int i = 1; i < wordArray.length; ++i)
+        {
+            offsetArray[i] = offsetArray[i - 1] + wordArray[i - 1].realWord.length();
+        }
+        trie.parseText(pattern, new AhoCorasickDoubleArrayTrie.IHit<NRPattern>()
+        {
+            @Override
+            public void hit(int begin, int end, NRPattern value)
+            {
+//            logger.trace(""ƥ�䵽��{}"", keyword);
+                StringBuilder sbName = new StringBuilder();
+                for (int i = begin; i < end; ++i)
+                {
+                    sbName.append(wordArray[i].realWord);
+                }
+                String name = sbName.toString();
+//            logger.trace(""ʶ�����{}"", name);
+                // ��һЩbad case��������
+                switch (value)
+                {
+                    case BCD:
+                        if (name.charAt(0) == name.charAt(2)) return; // �պ����һ������������ȵ�
+//                        String cd = name.substring(1);
+//                        if (CoreDictionary.contains(cd))
+//                        {
+//                            EnumItem<NR> item = PersonDictionary.dictionary.get(cd);
+//                            if (item == null || !item.containsLabel(Z)) return; // �������ֵ��Ǻ������ֲ��ڴʵ��У��кܴ��������������
+//                        }
+                        break;
+                }
+                if (isBadCase(name)) return;
+
+                // ��ʽ������һ������
+                if (HanLP.Config.DEBUG)
+                {
+                    System.out.printf(""ʶ���������%s %s\n"", name, value);
+                }
+                int offset = offsetArray[begin];
+                wordNetOptimum.insert(offset, new Vertex(Predefine.TAG_PEOPLE, name, ATTRIBUTE, WORD_ID), wordNetAll);
+            }
+        });
+    }","ģʽƥ��
+
+@param nrList         ȷ���ı�ע����
+@param vertexList     ԭʼ��δ�ӽ�ɫ��ע������
+@param wordNetOptimum ���Ż���ͼ
+@param wordNetAll     ȫ��ͼ",2
+RestTemplateBuilder.setReadTimeout,�˷������û�����ClientHttpRequestFactory�ϵĶ�ȡ��ʱʱ�䡣������һ��Duration���͵Ĳ���readTimeout����ͨ��requestFactoryCustomizer���ö�ȡ��ʱʱ�䡣����һ���µ�RestTemplateBuilderʵ�������а������º�Ķ�ȡ��ʱ���á��÷�����Ҫ���ڴ���������RestTemplateʵ���Ĺ�������ȷ�����󳬹�ָ��ʱ��û����Ӧʱ�ᳬʱ��,���ö�ȡ��ʱ��RestTemplateBuilder���������ظ��º����ʵ����,"public RestTemplateBuilder setReadTimeout(Duration readTimeout) {
+		return new RestTemplateBuilder(this.detectRequestFactory, this.rootUri,
+				this.messageConverters, this.requestFactorySupplier,
+				this.uriTemplateHandler, this.errorHandler, this.basicAuthentication,
+				this.restTemplateCustomizers,
+				this.requestFactoryCustomizer.readTimeout(readTimeout),
+				this.interceptors);
+	}","Sets the read timeout on the underlying {@link ClientHttpRequestFactory}.
+@param readTimeout the read timeout
+@return a new builder instance.
+@since 2.1.0",2
+LinearModel.score,�÷�����������������Ӧ�ĵ÷֡����ȣ���������������id��ɵ���������������ÿ������id������ֵΪ-1��������һ����������id�����Ϸ���Χ���׳��Ƿ������쳣��Ȼ�󣬶�����Ч������id���������ڲ��������е�������ͨ������id�͵�ǰ��ǩ����������ڲ����������ۼ���Ӧ��Ȩ�أ��Ӷ���õ÷֡�,�������������ļ�Ȩ�÷֣������Ƿ�������,"public double score(int[] featureVector, int currentTag)
+    {
+        double score = 0;
+        for (int index : featureVector)
+        {
+            if (index == -1)
+            {
+                continue;
+            }
+            else if (index < -1 || index >= featureMap.size())
+            {
+                throw new IllegalArgumentException(""�ڴ��ʱ�����˷Ƿ����±�"");
+            }
+            else
+            {
+                index = index * featureMap.tagSet.size() + currentTag;
+                score += parameter[index];    // ��ʵ��������Ȩ�ص��ۼ�
+            }
+        }
+        return score;
+    }","ͨ�����е�������������÷�
+
+@param featureVector ѹ����ʽ������id���ɵ���������
+@return",2
+Cluster.set_composite_vector,"The method `set_composite_vector` clears the existing composite vector and iterates over all documents in the `documents_` collection, adding each document's feature vector to the composite vector. The purpose of this method is to aggregate feature vectors from all documents into a single composite vector.",Clear composite vector and add each document's feature vector.,"void set_composite_vector()
+    {
+        composite_.clear();
+        for (Document<K> document : documents_)
+        {
+            composite_.add_vector(document.feature());
+        }
+    }",Add the vectors of all documents to a composite vector.,1
+DoubleArrayTrie.load,�÷�����ָ��·���������ݣ���Ҫ���ṩһ��ֵ���顣�����ȼ���Ƿ���Ҫͨ���ļ�ͨ���������ݣ�����ʹ��ByteArrayStream�����ء���ִ�м��ز����󣬽������ֵ����洢���ڲ��ֶ�v�С�����true��ʾ���سɹ���false��ʾʧ�ܡ�,��·���������ݣ�����ֵ���鲢���ؼ��ؽ��,"public boolean load(String path, V[] value)
+    {
+        if (!(IOAdapter == null ? loadBaseAndCheckByFileChannel(path) :
+        load(ByteArrayStream.createByteArrayStream(path), value)
+        )) return false;
+        v = value;
+        return true;
+    }","�Ӵ��̼��أ���Ҫ�����ṩֵ
+
+@param path
+@param value
+@return",2
+NettyRSocketServerFactory.addServerCustomizers,�÷�����������ServerRSocketFactoryCustomizerʵ������Щʵ�����ڹ���������ʱӦ�á���������ȷ���ṩ�Ĳ�����Ϊnull������������ӵ���ǰ��serverCustomizers�����С�,���Զ��������ӵ�serverCustomizers�����������ڷ���������,"public void addServerCustomizers(
+			ServerRSocketFactoryCustomizer... serverCustomizers) {
+		Assert.notNull(serverCustomizers, ""ServerCustomizer must not be null"");
+		this.serverCustomizers.addAll(Arrays.asList(serverCustomizers));
+	}","Add {@link ServerRSocketFactoryCustomizer}s that should applied while building the
+server.
+@param serverCustomizers the customizers to add",1
+DependencyCustomizer.ifAnyMissingClasses,�÷�������һ��Ƕ�׵�DependencyCustomizerʵ������ʵ����ָ����������������һ��������·����ʱ�����á�����ʹ��loadClass���Լ��ش��ݵ����������������һ�����޷����أ��򷵻�true��ʹcanAdd��������true���Ӷ������Զ����߼���,�����������Ƿ��������·���ϣ������һȱʧ��Ӧ���Զ�����,"public DependencyCustomizer ifAnyMissingClasses(String... classNames) {
+		return new DependencyCustomizer(this) {
+			@Override
+			protected boolean canAdd() {
+				for (String className : classNames) {
+					try {
+						DependencyCustomizer.this.loader.loadClass(className);
+					}
+					catch (Exception ex) {
+						return true;
+					}
+				}
+				return false;
+			}
+		};
+	}","Create a nested {@link DependencyCustomizer} that only applies if any of the
+specified class names are not on the class path.
+@param classNames the class names to test
+@return a nested {@link DependencyCustomizer}",1
+JSONArray.put,JSONArray.put ����������ָ������λ������ֵ�������Ŀ������λ���Ѿ���ֵ�������ֵ�����滻���������λ�ó�����ǰ�����С��������� null ����Դﵽ��Ӧ���ȡ�����ֵ���������͵ĳ���������֤���Ƿ�Ϊ�Ϸ���Double�������������ܻ��׳� JSONException �쳣��,���ض�����λ�����û��滻JSONArray��ֵ����������������֤��,"public JSONArray put(int index, Object value) throws JSONException {
+		if (value instanceof Number) {
+			// deviate from the original by checking all Numbers, not just floats &
+			// doubles
+			JSON.checkDouble(((Number) value).doubleValue());
+		}
+		while (this.values.size() <= index) {
+			this.values.add(null);
+		}
+		this.values.set(index, value);
+		return this;
+	}","Sets the value at {@code index} to {@code value}, null padding this array to the
+required length if necessary. If a value already exists at {@code
+index}, it will be replaced.
+@param index the index to set the value to
+@param value a {@link JSONObject}, {@link JSONArray}, String, Boolean, Integer,
+Long, Double, {@link JSONObject#NULL}, or {@code null}. May not be
+{@link Double#isNaN() NaNs} or {@link Double#isInfinite() infinities}.
+@return this array.
+@throws JSONException if processing of json failed",2
+RedisConnectionConfiguration.getClusterConfiguration,�÷������ڻ�ȡ�򴴽�Redis��Ⱥ���á����Ѵ�����ֱ�ӷ��أ�������������ļ������µļ�Ⱥ���á������clusterConfiguration��Ա��������Ϊ�����properties�л�ȡ��Ⱥ���Բ�����RedisClusterConfigurationʵ�����������ýڵ������ض������Լ����롣��properties�м�Ⱥ������Ϣȱʧ���򷵻�null��,��ȡ�򴴽�Redis��Ⱥ���ã����������򷵻�null��,"protected final RedisClusterConfiguration getClusterConfiguration() {
+		if (this.clusterConfiguration != null) {
+			return this.clusterConfiguration;
+		}
+		if (this.properties.getCluster() == null) {
+			return null;
+		}
+		RedisProperties.Cluster clusterProperties = this.properties.getCluster();
+		RedisClusterConfiguration config = new RedisClusterConfiguration(
+				clusterProperties.getNodes());
+		if (clusterProperties.getMaxRedirects() != null) {
+			config.setMaxRedirects(clusterProperties.getMaxRedirects());
+		}
+		if (this.properties.getPassword() != null) {
+			config.setPassword(RedisPassword.of(this.properties.getPassword()));
+		}
+		return config;
+	}","Create a {@link RedisClusterConfiguration} if necessary.
+@return {@literal null} if no cluster settings are set.",2
+PoolingConnectionFactoryBean.setConnectionFactory,�÷�������XAConnectionFactory��ʵ������ʹ��setClassName���������������connectionFactory�����������connectionFactory�ֶΣ�ͬʱֱ����������ΪDirectXAConnectionFactory������ʼ����������Ϊһ���µ�Propertiesʵ����,ΪPoolingConnectionFactoryBean����XA���ӹ���ʵ����,"public void setConnectionFactory(XAConnectionFactory connectionFactory) {
+		this.connectionFactory = connectionFactory;
+		setClassName(DirectXAConnectionFactory.class.getName());
+		setDriverProperties(new Properties());
+	}","Set the {@link XAConnectionFactory} directly, instead of calling
+{@link #setClassName(String)}.
+@param connectionFactory the connection factory to use",2
+PersonDictionary.isBadCase,�÷������ָ�������Ƿ��ڻ������ʵ��С���ͨ���Ӵʵ��л�ȡ�����������Ӧ�� EnumItem ����Ȼ����ö����Ƿ������ǩ 'NR.A'��������������� true����ʾ��������һ�������������򷵻� false��,��������Ƿ�Ϊ�����������ز���ֵ��,"static boolean isBadCase(String name)
+    {
+        EnumItem<NR> nrEnumItem = dictionary.get(name);
+        if (nrEnumItem == null) return false;
+        return nrEnumItem.containsLabel(NR.A);
+    }","��Ϊ�κ��㷨���޷����100%�����⣬������һЩbad case����Щbad case���ԡ��ǹ��� A 1������ʽ����ʵ���<BR>
+����������������Ƿ���bad case
+
+@param name
+@return",1
+RestTemplateExchangeTags.outcome,�÷���ͨ����������HTTP��Ӧ��״̬��������һ����ʾ�����Tag���󡣸���״̬��Ĳ�ͬ��Χ��������Ӧ��OUTCOME��ǩ��������Ϣ�ԡ��ɹ����ض��򡢿ͻ��˴���ͷ����������ǩ�������ӦΪnull�򲶻�IO�쳣�򲻺Ϸ������쳣���򷵻�δ֪�����ǩ��,����HTTP��Ӧ��״̬�뷵�ض�Ӧ�Ľ����ǩ,"public static Tag outcome(ClientHttpResponse response) {
+		try {
+			if (response != null) {
+				HttpStatus statusCode = response.getStatusCode();
+				if (statusCode.is1xxInformational()) {
+					return OUTCOME_INFORMATIONAL;
+				}
+				if (statusCode.is2xxSuccessful()) {
+					return OUTCOME_SUCCESS;
+				}
+				if (statusCode.is3xxRedirection()) {
+					return OUTCOME_REDIRECTION;
+				}
+				if (statusCode.is4xxClientError()) {
+					return OUTCOME_CLIENT_ERROR;
+				}
+				if (statusCode.is5xxServerError()) {
+					return OUTCOME_SERVER_ERROR;
+				}
+			}
+			return OUTCOME_UNKNOWN;
+		}
+		catch (IOException | IllegalArgumentException ex) {
+			return OUTCOME_UNKNOWN;
+		}
+	}","Creates an {@code outcome} {@code Tag} derived from the
+{@link ClientHttpResponse#getStatusCode() status} of the given {@code response}.
+@param response the response
+@return the outcome tag
+@since 2.2.0",1
+AbstractFilterRegistrationBean.setDispatcherTypes,�˷������ڸ���ָ���ĵ���������Ԫ�����õ��������͵ļ��ϡ�ͨ�����ݵ�һ��Ԫ�غ�������ѡԪ�أ��˷�������һ��EnumSet���ϣ�����������dispatcherTypes���ԡ�,����ָ��Ԫ�����õ��������ͼ���,"public void setDispatcherTypes(DispatcherType first, DispatcherType... rest) {
+		this.dispatcherTypes = EnumSet.of(first, rest);
+	}","Convenience method to {@link #setDispatcherTypes(EnumSet) set dispatcher types}
+using the specified elements.
+@param first the first dispatcher type
+@param rest additional dispatcher types",2
+IOUtil.newBufferedReader,�÷���Ϊָ��·�����ļ�����һ��BufferedReader�����ȣ�����IOUtil.newInputStream(path)�Ի�ȡ��·������������Ȼ��ʹ��ָ����UTF-8�ַ�������һ��InputStreamReader�������հ�װ��BufferedReader���ء��������ܻ��׳�FileNotFoundException��UnsupportedEncodingException��,����ָ��·���ļ���UTF-8����BufferedReader,"public static BufferedReader newBufferedReader(String path) throws IOException
+    {
+        return new BufferedReader(new InputStreamReader(IOUtil.newInputStream(path), ""UTF-8""));
+    }","����һ��BufferedReader
+@param path
+@return
+@throws FileNotFoundException
+@throws UnsupportedEncodingException",1
+MainClassFinder.doWithMainClasses,"�÷�����ָ���ĸ�Ŀ¼�±��������ļ�����Ŀ¼��ִ�лص������Դ���ÿ������main�������ࡣ
+
+��Ҫ���������
+1. ����Ŀ¼�Ƿ������Ϊ��ЧĿ¼�������׳��쳣�򷵻�null��
+2. ����һ����ջ��������ȱ��������ļ���
+3. ����ÿ���ļ���
+   - ����ǿɶ������ļ�������ļ�������ClassDescriptor����
+   - ���ClassDescriptor�����е�main������������ڣ�����ûص�������
+   - ��������ظ������ߣ���������κηǿջص������
+4. �������Ŀ¼����������ļ����й��˲�������ջ��
+5. ������Ϸ���null��",����Ŀ¼��������ÿ������main�������ಢ���ûص���,"static <T> T doWithMainClasses(File rootFolder, MainClassCallback<T> callback)
+			throws IOException {
+		if (!rootFolder.exists()) {
+			return null; // nothing to do
+		}
+		if (!rootFolder.isDirectory()) {
+			throw new IllegalArgumentException(
+					""Invalid root folder '"" + rootFolder + ""'"");
+		}
+		String prefix = rootFolder.getAbsolutePath() + ""/"";
+		Deque<File> stack = new ArrayDeque<>();
+		stack.push(rootFolder);
+		while (!stack.isEmpty()) {
+			File file = stack.pop();
+			if (file.isFile()) {
+				try (InputStream inputStream = new FileInputStream(file)) {
+					ClassDescriptor classDescriptor = createClassDescriptor(inputStream);
+					if (classDescriptor != null && classDescriptor.isMainMethodFound()) {
+						String className = convertToClassName(file.getAbsolutePath(),
+								prefix);
+						T result = callback.doWith(new MainClass(className,
+								classDescriptor.getAnnotationNames()));
+						if (result != null) {
+							return result;
+						}
+					}
+				}
+			}
+			if (file.isDirectory()) {
+				pushAllSorted(stack, file.listFiles(PACKAGE_FOLDER_FILTER));
+				pushAllSorted(stack, file.listFiles(CLASS_FILE_FILTER));
+			}
+		}
+		return null;
+	}","Perform the given callback operation on all main classes from the given root
+folder.
+@param <T> the result type
+@param rootFolder the root folder
+@param callback the callback
+@return the first callback result or {@code null}
+@throws IOException in case of I/O errors",1
+IntervalNode.checkForOverlaps,�÷������ڼ����������䣨interval�����������伯�ϣ�this.intervals�����ص���������������ṩ�ķ��������direction�������жϣ�LEFT����ʱ�ж�������ʼ��С�ڵ��ڸ�����������������Ϊ�ص���RIGHT�������ж����н�������ڵ��ڸ���������ʼ�������Ϊ�ص������շ��ط����������ص������б���,��������ص������ط��������������б�,"protected List<Intervalable> checkForOverlaps(Intervalable interval, Direction direction)
+    {
+
+        List<Intervalable> overlaps = new ArrayList<Intervalable>();
+        for (Intervalable currentInterval : this.intervals)
+        {
+            switch (direction)
+            {
+                case LEFT:
+                    if (currentInterval.getStart() <= interval.getEnd())
+                    {
+                        overlaps.add(currentInterval);
+                    }
+                    break;
+                case RIGHT:
+                    if (currentInterval.getEnd() >= interval.getStart())
+                    {
+                        overlaps.add(currentInterval);
+                    }
+                    break;
+            }
+        }
+        return overlaps;
+    }","Ѱ���ص�
+@param interval һ�����䣬��������ص�
+@param direction ���򣬱����ص�������interval����߻����ұ�
+@return",2
+BitVector.set,�÷����ڸ���λ�����е��ض�λ�������á�����һ��������id����һ������ֵ��bit����Ϊ���������bitΪtrue������_units���ݽṹ������λ��id��λΪ1������ʵ����ͨ����id����UNIT_SIZE�õ���������Ӧ��Ԫ��1����id��UNIT_SIZEȡģ��Ľ�����а�λ�����㡣,��ָ��λ�õ�λ����Ϊ1,"void set(int id, boolean bit)
+    {
+        if (bit)
+        {
+            _units.set(id / UNIT_SIZE, _units.get(id / UNIT_SIZE)
+                    | 1 << (id % UNIT_SIZE));
+        }
+    }","����ĳһλ�ı���
+@param id λ
+@param bit ����",2
+AhoCorasickDoubleArrayTrie.parseText,�÷������ڴ��������ı���ʶ���������ģʽ������Aho-Corasick˫����Trie�㷨���ڸ����ı������ַ�����������ǰ״̬����Ϊ�뵱ǰ�ַ���Ӧ��״̬�������ǰλ�õ�״̬����������飬��Ϊÿ��ƥ�����е��ô�������hit��������������λ�õ���Ϣ���������ӿ�IHit���ڴ������ֵ�ƥ�䡣�÷���ͨ�����ַ�ɨ���״̬ת��ʵ�ָ�Ч�Ķ�ģʽƥ�䡣,Aho-Corasick�Զ������������ڴ��ı���ʶ��ģʽ������ƥ����,"public void parseText(String text, IHit<V> processor)
+    {
+        int position = 1;
+        int currentState = 0;
+        for (int i = 0; i < text.length(); ++i)
+        {
+            currentState = getState(currentState, text.charAt(i));
+            int[] hitArray = output[currentState];
+            if (hitArray != null)
+            {
+                for (int hit : hitArray)
+                {
+                    processor.hit(position - l[hit], position, v[hit]);
+                }
+            }
+            ++position;
+        }
+    }","�����ı�
+
+@param text      �ı�
+@param processor ������",2
+GroovyCompiler.compile,�÷������ڱ���ָ����GroovyԴ���롣���������������Ļ��棬Ȼ�󴴽������ñ��뵥Ԫ�����ռ���������ÿ��Դ����·�������Ὣ��ת��ΪURL�����ӵ����뵥Ԫ��ִ��ASTת���󣬱��뵥Ԫ��CLASS_GENERATION�׶ν��б��롣�ռ����ռ����м��ص��ࡣ����������࣬�����Ƶ����б�����λ�����գ��������б��������󡣸÷������ܻ��׳�����ʧ�ܻ�I/O��ص��쳣��,����ָ����GroovyԴ���벢����������,"public Class<?>[] compile(String... sources)
+			throws CompilationFailedException, IOException {
+
+		this.loader.clearCache();
+		List<Class<?>> classes = new ArrayList<>();
+
+		CompilerConfiguration configuration = this.loader.getConfiguration();
+
+		CompilationUnit compilationUnit = new CompilationUnit(configuration, null,
+				this.loader);
+		ClassCollector collector = this.loader.createCollector(compilationUnit, null);
+		compilationUnit.setClassgenCallback(collector);
+
+		for (String source : sources) {
+			List<String> paths = ResourceUtils.getUrls(source, this.loader);
+			for (String path : paths) {
+				compilationUnit.addSource(new URL(path));
+			}
+		}
+
+		addAstTransformations(compilationUnit);
+
+		compilationUnit.compile(Phases.CLASS_GENERATION);
+		for (Object loadedClass : collector.getLoadedClasses()) {
+			classes.add((Class<?>) loadedClass);
+		}
+		ClassNode mainClassNode = MainClass.get(compilationUnit);
+
+		Class<?> mainClass = null;
+		for (Class<?> loadedClass : classes) {
+			if (mainClassNode.getName().equals(loadedClass.getName())) {
+				mainClass = loadedClass;
+			}
+		}
+		if (mainClass != null) {
+			classes.remove(mainClass);
+			classes.add(0, mainClass);
+		}
+
+		return ClassUtils.toClassArray(classes);
+	}","Compile the specified Groovy sources, applying any
+{@link CompilerAutoConfiguration}s. All classes defined in the sources will be
+returned from this method.
+@param sources the sources to compile
+@return compiled classes
+@throws CompilationFailedException in case of compilation failures
+@throws IOException in case of I/O errors
+@throws CompilationFailedException in case of compilation errors",2
+JSONArray.optBoolean,"optBoolean��JSONArray�а�ָ������λ����ȡһ������, ���Խ���ת��ΪBoolean�����ת���ɹ�������ת�����Booleanֵ���������Ϊnull����ת���������ṩ�ĺ�ֵ(fallback)��",��JSONArray�а��������ز���ֵ�����Ĭ��ֵ��,"public boolean optBoolean(int index, boolean fallback) {
+		Object object = opt(index);
+		Boolean result = JSON.toBoolean(object);
+		return result != null ? result : fallback;
+	}","Returns the value at {@code index} if it exists and is a boolean or can be coerced
+to a boolean. Returns {@code fallback} otherwise.
+@param index the index to get the value from
+@param fallback the fallback value
+@return the value at {@code index} of {@code fallback}",2
+JSONObject.optJSONObject,�÷���ͨ�����Ʋ�����ȡӳ���ֵ�������ֵ��JSONObject���ͣ��򷵻ظ�ֵ�����򷵻�null������ͨ������opt������ȡ���ƶ�Ӧ�Ķ���Ȼ����ö����Ƿ�ΪJSONObject���ͣ��������������ת�������أ����򷵻�null��,����������ƥ���JSONObject�����null��,"public JSONObject optJSONObject(String name) {
+		Object object = opt(name);
+		return object instanceof JSONObject ? (JSONObject) object : null;
+	}","Returns the value mapped by {@code name} if it exists and is a {@code
+JSONObject}. Returns null otherwise.
+@param name the name of the property
+@return the value or {@code null}",1
+HttpTunnelPayload.getPayloadData,"This static method attempts to read payload data from a given ReadableByteChannel. It allocates a ByteBuffer of a predefined size and reads data into it from the channel. If data is read successfully, the buffer is flipped to prepare it for reading and returned. If the reading operation is interrupted by an InterruptedIOException, the method returns null. An IllegalStateException is thrown if the channel is closed unexpectedly before any data can be read.",Reads data from a channel into a ByteBuffer and handles IO exceptions.,"public static ByteBuffer getPayloadData(ReadableByteChannel channel)
+			throws IOException {
+		ByteBuffer buffer = ByteBuffer.allocate(BUFFER_SIZE);
+		try {
+			int amountRead = channel.read(buffer);
+			Assert.state(amountRead != -1, ""Target server connection closed"");
+			buffer.flip();
+			return buffer;
+		}
+		catch (InterruptedIOException ex) {
+			return null;
+		}
+	}","Return the payload data for the given source {@link ReadableByteChannel} or null if
+the channel timed out whilst reading.
+@param channel the source channel
+@return payload data or {@code null}
+@throws IOException in case of I/O errors",2
+AbstractHealthAggregator.aggregateDetails,�˷�������һ����������ʵ����ӳ�䣬������һ���µ�LinkedHashMap�����а�������ӳ���������Ŀ��������Ŀ���Ǿۺϴ���Ľ���ʵ��ϸ�ڣ�ʹ���ܹ����л�ȡ�����Ϣ��,�ϲ�����ϸ��Ϊһ��LinkedHashMap����,"protected Map<String, Object> aggregateDetails(Map<String, Health> healths) {
+		return new LinkedHashMap<>(healths);
+	}","Return the map of 'aggregate' details that should be used from the specified
+healths.
+@param healths the health instances to aggregate
+@return a map of details
+@since 1.3.1",2
+AbstractErrorWebExceptionHandler.renderErrorView,�˷������ڳ��ִ�����ͼ�����ݸ�������ͼ���ƺʹ�������������Ӧ�����ȼ��ģ���Ƿ���ã����������ʹ�ø�ģ����Ⱦ��ͼ����ģ�岻���ã����Խ���Ϊ��̬HTML��Դ��������Դ��ʽ���뵽��Ӧ�С�������߶������ڣ��򷵻ؿյķ����ߣ�Mono.empty()����,���ִ�����ͼ������ʹ��ģ�壬����ʹ�þ�̬HTML��ȱʧ�򷵻ؿ�,"protected Mono<ServerResponse> renderErrorView(String viewName,
+			ServerResponse.BodyBuilder responseBody, Map<String, Object> error) {
+		if (isTemplateAvailable(viewName)) {
+			return responseBody.render(viewName, error);
+		}
+		Resource resource = resolveResource(viewName);
+		if (resource != null) {
+			return responseBody.body(BodyInserters.fromResource(resource));
+		}
+		return Mono.empty();
+	}","Render the given error data as a view, using a template view if available or a
+static HTML file if available otherwise. This will return an empty
+{@code Publisher} if none of the above are available.
+@param viewName the view name
+@param responseBody the error response being built
+@param error the error data as a map
+@return a Publisher of the {@link ServerResponse}",2
+SpringApplication.getAllSources,�÷������ؽ����ӵ�ApplicationContext�е�����Դ�Ĳ��ɱ伯�ϡ�������run(String...)ʱ����ڹ��캯����ָ�����κ���Դ�Լ�ͨ��setSources(Set)��ʽ���õ��κθ���Դ�����ȼ��primarySources�����Ƿ�Ϊ�գ������Ϊ����������Ԫ�����ӵ�allSources�����С����ż��sources�����Ƿ�Ϊ�գ������Ϊ����������Ԫ��Ҳ���ӵ�allSources�����С����շ���һ�������޸ĵ�allSources���ϡ�,���غϲ����Դ���ϣ���������޸�,"public Set<Object> getAllSources() {
+		Set<Object> allSources = new LinkedHashSet<>();
+		if (!CollectionUtils.isEmpty(this.primarySources)) {
+			allSources.addAll(this.primarySources);
+		}
+		if (!CollectionUtils.isEmpty(this.sources)) {
+			allSources.addAll(this.sources);
+		}
+		return Collections.unmodifiableSet(allSources);
+	}","Return an immutable set of all the sources that will be added to an
+ApplicationContext when {@link #run(String...)} is called. This method combines any
+primary sources specified in the constructor with any additional ones that have
+been {@link #setSources(Set) explicitly set}.
+@return an immutable set of all sources",1
+CoreBiGramTableDictionary.getBiFrequency,�˷������ڻ�ȡ�����ַ����ڴʵ��еĹ���Ƶ�Ρ�ͨ��CoreDictionary��trie�����ַ����ľ�ȷƥ�䣬�����һ�ַ���û��ƥ�䣬�򷵻�Ƶ��0���ɹ�ƥ��󣬷���ʹ�ö��ֲ�����Ԥ�ȶ���Ĵʶ�������Ѱ�Ҷ�Ӧ��B����������ͨ��ƫ��������ó���Ƶ��ֵ��,��������ַ����ĴʶԹ���Ƶ�β����ؽ����,"public static int getBiFrequency(String a, String b)
+    {
+        int idA = CoreDictionary.trie.exactMatchSearch(a);
+        if (idA == -1)
+        {
+            return 0;
+        }
+        int idB = CoreDictionary.trie.exactMatchSearch(b);
+        if (idB == -1)
+        {
+            return 0;
+        }
+        int index = binarySearch(pair, start[idA], start[idA + 1] - start[idA], idB);
+        if (index < 0) return 0;
+        index <<= 1;
+        return pair[index + 1];
+    }","��ȡ����Ƶ��
+
+@param a ��һ����
+@param b �ڶ�����
+@return ��һ����@�ڶ����ʳ��ֵ�Ƶ��",2
+MultipartConfigFactory.createMultipartConfig,����������һ���µ�MultipartConfigElementʵ���������н����õ�����ļ���С����������С���ļ���С��ֵ���ַ�����ʽת��Ϊ�ֽڸ�ʽ���ֱ����ڴ���MultipartConfigElement����,�������ô���MultipartConfigElementʵ�������ء�,"public MultipartConfigElement createMultipartConfig() {
+		long maxFileSizeBytes = convertToBytes(this.maxFileSize, -1);
+		long maxRequestSizeBytes = convertToBytes(this.maxRequestSize, -1);
+		long fileSizeThresholdBytes = convertToBytes(this.fileSizeThreshold, 0);
+		return new MultipartConfigElement(this.location, maxFileSizeBytes,
+				maxRequestSizeBytes, (int) fileSizeThresholdBytes);
+	}","Create a new {@link MultipartConfigElement} instance.
+@return the multipart config element",1
+Bindable.withExistingValue,����������ڴ���һ�����º��Bindableʵ��������������һ�����е�ֵ������ͨ��������֤existingValue�����Ƿ����������Ҫô��null��Ҫô�ǵ�ǰ���͵����飬Ҫô�ǵ�ǰ���͵�ʵ�������Ÿ���existingValue�Ƿ�Ϊnull��������Ӧ�̣�Supplier����ֵ�����existingValue��Ϊnull����ʹ�ø�ֵ��ʼ��Supplier����󣬷���һ���µ�Bindableʵ������ʵ��ʹ��ָ�������͡��ѽ����ĺ�װ���͡��ṩ��Supplier����ע����й��졣,����һ����������ֵ�ĸ���Bindableʵ��,"public Bindable<T> withExistingValue(T existingValue) {
+		Assert.isTrue(
+				existingValue == null || this.type.isArray()
+						|| this.boxedType.resolve().isInstance(existingValue),
+				() -> ""ExistingValue must be an instance of "" + this.type);
+		Supplier<T> value = (existingValue != null) ? () -> existingValue : null;
+		return new Bindable<>(this.type, this.boxedType, value, NO_ANNOTATIONS);
+	}","Create an updated {@link Bindable} instance with an existing value.
+@param existingValue the existing value
+@return an updated {@link Bindable}",2
+WebServiceTemplateBuilder.additionalMessageSenders,�÷���������WebServiceTemplate���Ӷ����WebServiceMessageSenders��������ͨ��Assert��ȷ���������messageSenders��Ϊ�գ�Ȼ����ЩmessageSendersת��ΪList��������һ�����ط���additionalMessageSenders������������������ڹ�����ģʽ��׷�Ӹ������Ϣ�����ߣ�������һ���µ�WebServiceTemplateBuilderʵ����,���Ӷ����WebService��Ϣ�����߲������µĹ�����ʵ����,"public WebServiceTemplateBuilder additionalMessageSenders(
+			WebServiceMessageSender... messageSenders) {
+		Assert.notNull(messageSenders, ""MessageSenders must not be null"");
+		return additionalMessageSenders(Arrays.asList(messageSenders));
+	}","Add additional {@link WebServiceMessageSender WebServiceMessageSenders} that should
+be used with the {@link WebServiceTemplate}.
+@param messageSenders the message senders to add
+@return a new builder instance.
+@see #messageSenders(WebServiceMessageSender...)",2
+HttpTunnelServer.handle,�÷������������HTTP���ӡ���ͨ���������̵߳Ĵ����������������HTTP���ӣ�Ȼ����� httpConnection.waitForResponse() �ȴ���Ӧ��������� ConnectException �쳣���򷵻� HTTP ״̬��Ϊ GONE ����Ӧ��,���������HTTP���ӣ����������������Ӧ,"protected void handle(HttpConnection httpConnection) throws IOException {
+		try {
+			getServerThread().handleIncomingHttp(httpConnection);
+			httpConnection.waitForResponse();
+		}
+		catch (ConnectException ex) {
+			httpConnection.respond(HttpStatus.GONE);
+		}
+	}","Handle an incoming HTTP connection.
+@param httpConnection the HTTP connection
+@throws IOException in case of I/O errors",2
+ConfigurationPropertySources.from,�÷�����һ��������Spring PropertySource����Ϊһ���µ�SpringConfigurationPropertySource��������һ�������˵�һ����Source��Iterable���ϡ�,��Spring PropertySource�����ͷ���һ��SpringConfigurationPropertySource�ļ���,"public static Iterable<ConfigurationPropertySource> from(PropertySource<?> source) {
+		return Collections.singleton(SpringConfigurationPropertySource.from(source));
+	}","Return {@link Iterable} containing a single new {@link ConfigurationPropertySource}
+adapted from the given Spring {@link PropertySource}.
+@param source the Spring property source to adapt
+@return an {@link Iterable} containing a single newly adapted
+{@link SpringConfigurationPropertySource}",2
+AutoConfigurationImportSelector.getAutoConfigurationEntry,�����ṩ��ע��Ԫ���ݻ�ȡ�Զ�������Ŀ�� �������ȼ�������Ƿ����ã�Ȼ���ע��Ԫ�����л�ȡ���Ժͺ�ѡ���ã���ȥ���ظ�����ţ���ȡ�ų�����б��������ų���顣ʣ������ûᰴ���Զ�����Ԫ���ݽ��й��ˡ���󣬴����Զ����õ����¼���������һ��������Ч���ú��ų��б���AutoConfigurationEntry����,���ػ���ע��Ԫ���ݵ��Զ�������Ŀ��,"protected AutoConfigurationEntry getAutoConfigurationEntry(
+			AutoConfigurationMetadata autoConfigurationMetadata,
+			AnnotationMetadata annotationMetadata) {
+		if (!isEnabled(annotationMetadata)) {
+			return EMPTY_ENTRY;
+		}
+		AnnotationAttributes attributes = getAttributes(annotationMetadata);
+		List<String> configurations = getCandidateConfigurations(annotationMetadata,
+				attributes);
+		configurations = removeDuplicates(configurations);
+		Set<String> exclusions = getExclusions(annotationMetadata, attributes);
+		checkExcludedClasses(configurations, exclusions);
+		configurations.removeAll(exclusions);
+		configurations = filter(configurations, autoConfigurationMetadata);
+		fireAutoConfigurationImportEvents(configurations, exclusions);
+		return new AutoConfigurationEntry(configurations, exclusions);
+	}","Return the {@link AutoConfigurationEntry} based on the {@link AnnotationMetadata}
+of the importing {@link Configuration @Configuration} class.
+@param autoConfigurationMetadata the auto-configuration metadata
+@param annotationMetadata the annotation metadata of the configuration class
+@return the auto-configurations that should be imported",2
+CommonSynonymDictionaryEx.distance,�÷����������������ַ������������ľ��롣����ͨ������`get`������ȡ�����ַ���`a`��`b`�Ĵ����������һ����Ϊ`null`���򷵻��������ֵ������֮һ����ʾ���޾��롣Ȼ�����`ArrayDistance.computeAverageDistance`���������㲢������������֮���ƽ�����롣,���������ַ�����������룬�����������ƽ�����롣,"public long distance(String a, String b)
+    {
+        Long[] itemA = get(a);
+        if (itemA == null) return Long.MAX_VALUE / 3;
+        Long[] itemB = get(b);
+        if (itemB == null) return Long.MAX_VALUE / 3;
+
+        return ArrayDistance.computeAverageDistance(itemA, itemB);
+    }","�������
+@param a
+@param b
+@return",2
+RawConfigurationMetadata.resolveName,�÷������ڽ���ConfigurationMetadataItem��������ơ����ȣ����������������Ϊ��ID��Ĭ��ֵ��Ȼ�󣬸÷������Ի�ȡ��ö����Ӧ��ConfigurationMetadataSource���������������Ӧ��source���÷�������ȡsource��groupId�����������ID���бȽϡ����ID��groupId����һ����ſ�ͷ���򽫵�ź�Ĳ�������Ϊ������ơ�,����ConfigurationMetadataItem������ƣ������Դ�ƥ���source����ȡ���ơ�,"private void resolveName(ConfigurationMetadataItem item) {
+		item.setName(item.getId()); // fallback
+		ConfigurationMetadataSource source = getSource(item);
+		if (source != null) {
+			String groupId = source.getGroupId();
+			String dottedPrefix = groupId + ""."";
+			String id = item.getId();
+			if (hasLength(groupId) && id.startsWith(dottedPrefix)) {
+				String name = id.substring(dottedPrefix.length());
+				item.setName(name);
+			}
+		}
+	}","Resolve the name of an item against this instance.
+@param item the item to resolve
+@see ConfigurationMetadataProperty#setName(String)",1
+CharacterBasedGenerativeModel.learn,�÷���ͨ����������Ĵ��б�����ÿ���ʰ��ַ�����Ϊ��ʼ���м�ͽ���״̬�������ӵ�һ���ַ���������С����ڵ��ַ��ʣ�ֱ�ӱ��Ϊ's'�����ڶ��ַ��ʣ����ַ����Ϊ'b'���м��ַ����Ϊ'm'��ĩ�ַ����Ϊ'e'��Ȼ��ʹ����Щ�ַ��Դ���һ�����ڣ���Ӧ����Ԫ����Ԫ��һԪ�ֵ�Ƶ��ͳ�ƣ��԰�����������ģ�͡�,ģ�ʹӴ��б�ѧϰ�ַ����У�����Ƶ��ͳ�����γ�����ģ�͡�,"public void learn(List<Word> wordList)
+    {
+        LinkedList<char[]> sentence = new LinkedList<char[]>();
+        for (IWord iWord : wordList)
+        {
+            String word = iWord.getValue();
+            if (word.length() == 1)
+            {
+                sentence.add(new char[]{word.charAt(0), 's'});
+            }
+            else
+            {
+                sentence.add(new char[]{word.charAt(0), 'b'});
+                for (int i = 1; i < word.length() - 1; ++i)
+                {
+                    sentence.add(new char[]{word.charAt(i), 'm'});
+                }
+                sentence.add(new char[]{word.charAt(word.length() - 1), 'e'});
+            }
+        }
+        // ת����ϣ���ʼͳ��
+        char[][] now = new char[3][];   // ����3�Ķ���
+        now[1] = bos;
+        now[2] = bos;
+        tf.add(1, bos, bos);
+        tf.add(2, bos);
+        for (char[] i : sentence)
+        {
+            System.arraycopy(now, 1, now, 0, 2);
+            now[2] = i;
+            tf.add(1, i);   // uni
+            tf.add(1, now[1], now[2]);   // bi
+            tf.add(1, now);   // tri
+        }
+    }","��ģ�͹۲�һ������
+@param wordList",2
+ConditionEvaluationReport.recordEvaluationCandidates,�÷������ڼ�¼��Ϊ����������ѡ��������ơ����ȣ���ȷ���ṩ�Ķ��� evaluationCandidates ���� null��Ȼ����Щ����������ӵ� unconditionalClasses �����С�,��¼����������ѡ����,"public void recordEvaluationCandidates(List<String> evaluationCandidates) {
+		Assert.notNull(evaluationCandidates, ""evaluationCandidates must not be null"");
+		this.unconditionalClasses.addAll(evaluationCandidates);
+	}","Records the names of the classes that are candidates for condition evaluation.
+@param evaluationCandidates the names of the classes whose conditions will be
+evaluated",2
+AtomikosProperties.asProperties,"This method constructs a Properties object containing Atomikos configuration properties. It populates this Properties object by calling set() to insert key-value pairs. The keys are various configuration settings like 'service', 'max_timeout', and others, while the values are obtained by calling corresponding getter methods. The method also retrieves a Recovery object to obtain specific retry and delay properties for recovery settings. Finally, it returns the populated Properties object.",Method to extract Atomikos configuration into a Properties object.,"public Properties asProperties() {
+		Properties properties = new Properties();
+		set(properties, ""service"", getService());
+		set(properties, ""max_timeout"", getMaxTimeout());
+		set(properties, ""default_jta_timeout"", getDefaultJtaTimeout());
+		set(properties, ""max_actives"", getMaxActives());
+		set(properties, ""enable_logging"", isEnableLogging());
+		set(properties, ""tm_unique_name"", getTransactionManagerUniqueName());
+		set(properties, ""serial_jta_transactions"", isSerialJtaTransactions());
+		set(properties, ""allow_subtransactions"", isAllowSubTransactions());
+		set(properties, ""force_shutdown_on_vm_exit"", isForceShutdownOnVmExit());
+		set(properties, ""default_max_wait_time_on_shutdown"",
+				getDefaultMaxWaitTimeOnShutdown());
+		set(properties, ""log_base_name"", getLogBaseName());
+		set(properties, ""log_base_dir"", getLogBaseDir());
+		set(properties, ""checkpoint_interval"", getCheckpointInterval());
+		set(properties, ""threaded_2pc"", isThreadedTwoPhaseCommit());
+		Recovery recovery = getRecovery();
+		set(properties, ""forget_orphaned_log_entries_delay"",
+				recovery.getForgetOrphanedLogEntriesDelay());
+		set(properties, ""recovery_delay"", recovery.getDelay());
+		set(properties, ""oltp_max_retries"", recovery.getMaxRetries());
+		set(properties, ""oltp_retry_interval"", recovery.getRetryInterval());
+		return properties;
+	}","Returns the properties as a {@link Properties} object that can be used with
+Atomikos.
+@return the properties",2
+SparseVector.normalize,�÷������ڱ�׼��ϡ�����������ȼ��������ķ������÷�����ͨ���ڲ�����norm()��õġ��ڼ���������󣬷�������������ÿ��Ԫ�أ���ÿ��Ԫ�ص�ֵ���Է������Ӷ�ʵ�������ı�׼����,��׼��ϡ��������ֵ,"void normalize()
+    {
+        double nrm = norm();
+        for (Map.Entry<Integer, Double> d : entrySet())
+        {
+            d.setValue(d.getValue() / nrm);
+        }
+    }",Normalize a vector.,1
+WebServiceTemplateBuilder.messageSenders,�÷����������� WebServiceTemplate �� WebServiceMessageSender ���ϣ�ͨ������һ���ǿյ� messageSenders �������滻֮ǰ�������Ϣ�������������κλ��� HTTP ����Ϣ���������������µ� WebServiceTemplateBuilder ʵ����������ʽ���á��˷���ʹ���˶�����ȷ�� messageSenders ���ϲ�Ϊ�գ�Ȼ�󴴽�һ���µ� WebServiceTemplateBuilder ʵ�������˼������ӵ��ڲ������С����Կ���ʹ�� additionalMessageSenders �����������û�����ķ�������,���� WebServiceTemplate ����Ϣ�������������µĹ�����ʵ��,"public WebServiceTemplateBuilder messageSenders(
+			Collection<? extends WebServiceMessageSender> messageSenders) {
+		Assert.notNull(messageSenders, ""MessageSenders must not be null"");
+		return new WebServiceTemplateBuilder(this.detectHttpMessageSender,
+				this.interceptors, this.internalCustomizers, this.customizers,
+				this.messageSenders.set(messageSenders), this.marshaller,
+				this.unmarshaller, this.destinationProvider, this.transformerFactoryClass,
+				this.messageFactory);
+	}","Sets the {@link WebServiceMessageSender WebServiceMessageSenders} that should be
+used with the {@link WebServiceTemplate}. Setting this value will replace any
+previously defined message senders, including the HTTP-based message sender, if
+any. Consider using {@link #additionalMessageSenders(Collection)} to keep it with
+user-defined message senders.
+@param messageSenders the message senders to set
+@return a new builder instance.
+@see #additionalMessageSenders(Collection)
+@see #detectHttpMessageSender(boolean)",2
+Nature.fromString,"This method safely converts a string representation of a part-of-speech to its corresponding Enum type. It looks up the provided `name` in a map (`idMap`) to find an associated identifier. If no such identifier is found, the method returns null. Otherwise, it uses this identifier to return the Enum value from a predefined array (`values`).","Converts a string to its matching Enum type, returning null if undefined.","public static final Nature fromString(String name)
+    {
+        Integer id = idMap.get(name);
+        if (id == null)
+            return null;
+        return values[id];
+    }","��ȫ�ؽ��ַ������͵Ĵ���תΪEnum���ͣ����δ����ô��ԣ��򷵻�null
+
+@param name �ַ�������
+@return Enum����",2
+RestTemplateBuilder.requestFactory,�÷�����������RestTemplateʹ�õ�ClientHttpRequestFactory�ࡣ������һ��ClientHttpRequestFactory������Ϊ������������createRequestFactory�����������󹤳�����֮�󷵻�һ���µ�RestTemplateBuilderʵ�����÷���ʹ�ö�����ȷ�������requestFactory������Ϊnull��,����RestTemplate�����󹤳��������µĹ�����ʵ��,"public RestTemplateBuilder requestFactory(
+			Class<? extends ClientHttpRequestFactory> requestFactory) {
+		Assert.notNull(requestFactory, ""RequestFactory must not be null"");
+		return requestFactory(() -> createRequestFactory(requestFactory));
+	}","Set the {@link ClientHttpRequestFactory} class that should be used with the
+{@link RestTemplate}.
+@param requestFactory the request factory to use
+@return a new builder instance",2
+LexicalAnalyzerPipeline.getAnalyzer,�÷������� LexicalAnalyzerPipeline �е����ж��󣬲����ÿ�������Ƿ�Ϊ LexicalAnalyzerPipe ���͡�����ǣ��򷵻�������Ĵʷ������������û��ƥ��Ķ��󣬷���null���������Ի�ȡ��һ���ʷ������ܵ��еĴʷ���������,�ӹܵ��л�ȡ�ʷ���������������������򷵻�null��,"public LexicalAnalyzer getAnalyzer()
+    {
+        for (Pipe<List<IWord>, List<IWord>> pipe : this)
+        {
+            if (pipe instanceof LexicalAnalyzerPipe)
+            {
+                return ((LexicalAnalyzerPipe) pipe).analyzer;
+            }
+        }
+        return null;
+    }","��ȡ�����Ĵʷ�������
+
+@return",2
+Utility.shrink,�÷������ڽ�һ�������ķ�������'from'��������һ��Ŀ������'to'�С���ǰ��������'to'����ĳ���С�ڻ����'from'����ĳ��ȡ�����ͨ��ʹ��System.arraycopy��(from)�����и���Ԫ�ص�(to)���飬�ӵ�һ��Ԫ�ؿ�ʼ���ƣ����Ƶ�Ԫ������Ϊ'to'�ĳ��ȣ���󷵻�'to'���顣,ͨ������ʵ����������,"public static <T> T[] shrink(T[] from, T[] to)
+    {
+        assert to.length <= from.length;
+        System.arraycopy(from, 0, to, 0, to.length);
+        return to;
+    }","����ָ�
+
+@param from Դ
+@param to   Ŀ��
+@param <T>  ����
+@return Ŀ��",2
+DependencyCustomizer.add,����һ��ָ��ģ��������ʹ�ø����ķ����������ͣ�����ѡ���������д�����������ͨ��ArtifactCoordinatesResolver����ģ���group ID�Ͱ汾����ʹ��createGrabAnnotation��������ע�͡�,����ģ��������������Ͱ汾������ע�͡�,"public DependencyCustomizer add(String module, String classifier, String type,
+			boolean transitive) {
+		if (canAdd()) {
+			ArtifactCoordinatesResolver artifactCoordinatesResolver = this.dependencyResolutionContext
+					.getArtifactCoordinatesResolver();
+			this.classNode.addAnnotation(
+					createGrabAnnotation(artifactCoordinatesResolver.getGroupId(module),
+							artifactCoordinatesResolver.getArtifactId(module),
+							artifactCoordinatesResolver.getVersion(module), classifier,
+							type, transitive));
+		}
+		return this;
+	}","Add a single dependency with the specified classifier and type and, optionally, all
+of its dependencies. The group ID and version of the dependency are resolved from
+the module by using the customizer's {@link ArtifactCoordinatesResolver}.
+@param module the module ID
+@param classifier the classifier, may be {@code null}
+@param type the type, may be {@code null}
+@param transitive {@code true} if the transitive dependencies should also be added,
+otherwise {@code false}
+@return this {@link DependencyCustomizer} for continued use",2
+InfoPropertiesInfoContributor.replaceValue,�÷�����content�м���Ƿ����ָ����key�����������value��Ϊnull�������µ�value�滻content�ж�Ӧkey��ֵ��,�滻content��ָ��key��ֵΪ��null��value,"protected void replaceValue(Map<String, Object> content, String key, Object value) {
+		if (content.containsKey(key) && value != null) {
+			content.put(key, value);
+		}
+	}","Replace the {@code value} for the specified key if the value is not {@code null}.
+@param content the content to expose
+@param key the property to replace
+@param value the new value",1
+InitializrService.executeInitializrMetadataRetrieval,�÷���ͨ������һ��HTTP GET��������ָ����URL���������Ԫ���ݡ����ȣ���ʹ�ø�����URLʵ����HttpGet����Ȼ����������ͷ�Խ����ض���Ԫ�����������͡����������execute������ִ�����󣬲�������URL�������������ݽ�ȥ�Է��ؿɹرյ�Http��Ӧ��,ִ��HTTP GET�����Դ�URL��������Ԫ����,"private CloseableHttpResponse executeInitializrMetadataRetrieval(String url) {
+		HttpGet request = new HttpGet(url);
+		request.setHeader(new BasicHeader(HttpHeaders.ACCEPT, ACCEPT_META_DATA));
+		return execute(request, url, ""retrieve metadata"");
+	}","Retrieves the meta-data of the service at the specified URL.
+@param url the URL
+@return the response",1
+Binder.bind,"Binds a specified Bindable target by converting a property name string to a ConfigurationPropertyName, and then delegating to another bind method using property sources tied to this binder. It uses a bind handler, which may be null, to manage the binding process.",ͨ�������������Ʋ�ʹ������Դ��Ŀ��Bindable����,"public <T> BindResult<T> bind(String name, Bindable<T> target, BindHandler handler) {
+		return bind(ConfigurationPropertyName.of(name), target, handler);
+	}","Bind the specified target {@link Bindable} using this binder's
+{@link ConfigurationPropertySource property sources}.
+@param name the configuration property name to bind
+@param target the target bindable
+@param handler the bind handler (may be {@code null})
+@param <T> the bound type
+@return the binding result (never {@code null})",1
+MimeMappings.add,�÷�����ӳ����������µ�mimeӳ�䡣�������ļ���չ����mime������Ϊ�������������Ǵ洢����Ϊ'map'��ӳ������С����ָ����չ���Ѿ�����ӳ�䣬�򷵻�֮ǰ��mime���ͣ����򷵻�null��,Ϊ�ļ���չ�������µ�mimeӳ�䣬����ԭӳ��,"public String add(String extension, String mimeType) {
+		Mapping previous = this.map.put(extension, new Mapping(extension, mimeType));
+		return (previous != null) ? previous.getMimeType() : null;
+	}","Add a new mime mapping.
+@param extension the file extension (excluding '.')
+@param mimeType the mime type to map
+@return any previous mapping or {@code null}",1
+IOUtil.dirname,�÷�������һ����ʾ�ļ�·�����ַ�����Ϊ������ͨ���������һ��б���ַ�����λ�ļ����ڵ�Ŀ¼�����Ҳ���б�ܣ��򷵻�ԭ·�������򣬷��ش���ʼλ�õ��������һ��б���ַ����ڵ����ַ�������Ϊ�ļ�Ŀ¼·����,��ȡ·���е�Ŀ¼�����������һ��б��֮ǰ�����ַ�����,"public static String dirname(String path)
+    {
+        int index = path.lastIndexOf('/');
+        if (index == -1) return path;
+        return path.substring(0, index + 1);
+    }","��ȡ�ļ�����Ŀ¼��·��
+@param path
+@return",2
+Segment.combineByCustomDictionary,�˷���ͨ���û��Զ���ʵ�ϲ������Ĵִַʽڵ��б������ȣ����ʽڵ��б�ת��Ϊ���顣����ʹ��˫�شʻ��ṹ��DAT��BinTrie�����кϲ�����DAT�ϲ��У��Դʽڵ����״̬ת�Ʋ��ڴ��ںϲ����ʱ�ϲ��ʽڵ㡣��BinTrie�ϲ��У�����״̬��鲢�ڴ����ۻ�ֵʱ���дʽڵ�ĺϲ������յĺϲ���������»��б������ء�,ʹ���Զ���ʵ�ϲ��ʽڵ��б������غϲ���Ľ����,"protected static List<Vertex> combineByCustomDictionary(List<Vertex> vertexList, DoubleArrayTrie<CoreDictionary.Attribute> dat)
+    {
+        assert vertexList.size() >= 2 : ""vertexList���ٰ��� ʼ##ʼ �� ĩ##ĩ"";
+        Vertex[] wordNet = new Vertex[vertexList.size()];
+        vertexList.toArray(wordNet);
+        // DAT�ϲ�
+        int length = wordNet.length - 1; // ������β
+        for (int i = 1; i < length; ++i)
+        {
+            int state = 1;
+            state = dat.transition(wordNet[i].realWord, state);
+            if (state > 0)
+            {
+                int to = i + 1;
+                int end = to;
+                CoreDictionary.Attribute value = dat.output(state);
+                for (; to < length; ++to)
+                {
+                    state = dat.transition(wordNet[to].realWord, state);
+                    if (state < 0) break;
+                    CoreDictionary.Attribute output = dat.output(state);
+                    if (output != null)
+                    {
+                        value = output;
+                        end = to + 1;
+                    }
+                }
+                if (value != null)
+                {
+                    combineWords(wordNet, i, end, value);
+                    i = end - 1;
+                }
+            }
+        }
+        // BinTrie�ϲ�
+        if (CustomDictionary.trie != null)
+        {
+            for (int i = 1; i < length; ++i)
+            {
+                if (wordNet[i] == null) continue;
+                BaseNode<CoreDictionary.Attribute> state = CustomDictionary.trie.transition(wordNet[i].realWord.toCharArray(), 0);
+                if (state != null)
+                {
+                    int to = i + 1;
+                    int end = to;
+                    CoreDictionary.Attribute value = state.getValue();
+                    for (; to < length; ++to)
+                    {
+                        if (wordNet[to] == null) continue;
+                        state = state.transition(wordNet[to].realWord.toCharArray(), 0);
+                        if (state == null) break;
+                        if (state.getValue() != null)
+                        {
+                            value = state.getValue();
+                            end = to + 1;
+                        }
+                    }
+                    if (value != null)
+                    {
+                        combineWords(wordNet, i, end, value);
+                        i = end - 1;
+                    }
+                }
+            }
+        }
+        vertexList.clear();
+        for (Vertex vertex : wordNet)
+        {
+            if (vertex != null) vertexList.add(vertex);
+        }
+        return vertexList;
+    }","ʹ���û��ʵ�ϲ��ַֽ��
+@param vertexList �ַֽ��
+@param dat �û��Զ���ʵ�
+@return �ϲ���Ľ��",2
+ProjectGenerationRequest.resolveArtifactId,�÷������ڽ�����Ҫʹ�õ�artifactId�����artifactId�ֶβ�Ϊ�գ���ֱ�ӷ�����ֵ�����artifactIdΪ�գ�����output�ֶΣ�������Ϊ��ѡ���output�ֶβ�Ϊ�գ��������ȡ�����һ����֮ǰ�����ַ�����ΪartifactId�����output��û�е㣬�򷵻�������output�ַ�������outputҲΪ�գ��򷵻�null��,����artifactId��ʹ��artifactId�ֶλ��output�Ƶ���ֵ,"protected String resolveArtifactId() {
+		if (this.artifactId != null) {
+			return this.artifactId;
+		}
+		if (this.output != null) {
+			int i = this.output.lastIndexOf('.');
+			return (i != -1) ? this.output.substring(0, i) : this.output;
+		}
+		return null;
+	}","Resolve the artifactId to use or {@code null} if it should not be customized.
+@return the artifactId",2
+AutoConfigurationImportSelector.getCandidateConfigurations,�÷�������Ӧ���ǵ��Զ�����������Ĭ������£�����ʹ��SpringFactoriesLoader��META-INF/spring.factories���غ�ѡ�Զ������ࡣ�����������SpringFactoriesLoader.loadFactoryNames��������������Ȼ��ȷ�����ص��������б���Ϊ�գ������׳��쳣��,���ز������Զ����������б�,"protected List<String> getCandidateConfigurations(AnnotationMetadata metadata,
+			AnnotationAttributes attributes) {
+		List<String> configurations = SpringFactoriesLoader.loadFactoryNames(
+				getSpringFactoriesLoaderFactoryClass(), getBeanClassLoader());
+		Assert.notEmpty(configurations,
+				""No auto configuration classes found in META-INF/spring.factories. If you ""
+						+ ""are using a custom packaging, make sure that file is correct."");
+		return configurations;
+	}","Return the auto-configuration class names that should be considered. By default
+this method will load candidates using {@link SpringFactoriesLoader} with
+{@link #getSpringFactoriesLoaderFactoryClass()}.
+@param metadata the source metadata
+@param attributes the {@link #getAttributes(AnnotationMetadata) annotation
+attributes}
+@return a list of candidate configurations",2
+Launcher.launch,�÷���ͨ������JarFile.registerUrlProtocolHandler()��ע��URLЭ�鴦������Ȼ��ͨ��createClassLoader()ʹ�ö������·���浵�������Զ�����������������������һ�����ص�launch()�������÷�����Ҫ����args���������ƣ��Լ�֮ǰ�������������������Ӧ�ó��������ĳ�ʼ��ڵ㣬Ӧ���������е�main�������á�,ͨ���Զ��������������Ӧ�ó���ע��URLЭ�鴦������,"protected void launch(String[] args) throws Exception {
+		JarFile.registerUrlProtocolHandler();
+		ClassLoader classLoader = createClassLoader(getClassPathArchives());
+		launch(args, getMainClass(), classLoader);
+	}","Launch the application. This method is the initial entry point that should be
+called by a subclass {@code public static void main(String[] args)} method.
+@param args the incoming arguments
+@throws Exception if the application fails to launch",2
+FeatureIndex.calcCost,calcCost����ͨ������·������path�е�fvector������·���������������ۡ��������Ƚ�path��cost��ʼ��Ϊ0.0�����alphaFloat_��Ϊnull����ʹ��alphaFloat_�����������������Ӧ��Ȩ���ۼӵ�����c�У����ս��ۼƽ������costFactor_������Ϊpath.cost�����alphaFloat_Ϊnull�������ʹ��alpha_��������ͬ��ʽ����cost���˷�������fvector�е�����ֵ��·�����˽ڵ��yֵ����ѡ����Ӧ��Ȩ�ز�����ת�ƴ��ۡ�,����·�������������ۣ�����·��cost���ԡ�,"public void calcCost(Path path)
+    {
+        path.cost = 0.0;
+        if (alphaFloat_ != null)
+        {
+            float c = 0.0f;
+            for (int i = 0; path.fvector.get(i) != -1; i++)
+            {
+                c += alphaFloat_[path.fvector.get(i) + path.lnode.y * y_.size() + path.rnode.y];
+            }
+            path.cost = costFactor_ * c;
+        }
+        else
+        {
+            double c = 0.0;
+            for (int i = 0; path.fvector.get(i) != -1; i++)
+            {
+                c += alpha_[path.fvector.get(i) + path.lnode.y * y_.size() + path.rnode.y];
+            }
+            path.cost = costFactor_ * c;
+        }
+    }","����ת�����������Ĵ���
+
+@param path ��",2
+AbstractErrorWebExceptionHandler.isTraceEnabled,���ָ���ķ������������Ƿ����'trace'���������ж��Ƿ������˴�����١������������л�ȡ'trace'������ֵ��Ĭ��Ϊ'false'���������ֵ�������ַ���'false'���򷵻�true�����������������٣����򷵻�false��,���������'trace'������ȷ�������Ƿ�����,"protected boolean isTraceEnabled(ServerRequest request) {
+		String parameter = request.queryParam(""trace"").orElse(""false"");
+		return !""false"".equalsIgnoreCase(parameter);
+	}","Check whether the trace attribute has been set on the given request.
+@param request the source request
+@return {@code true} if the error trace has been requested, {@code false} otherwise",2
+IOUtil.writeLine,�÷���ͨ��ʹ��BufferedWriter���󽫴��ݵ�String����д�������ÿ���ַ���Ԫ��֮��ʹ���Ʊ����ָ���һ��Ԫ�غ���û���Ʊ����������д��ʧ�ܣ����׳�IOException��,ʹ��BufferedWriter����д���ַ������飬Ԫ��֮�����Ʊ����ָ���,"public static void writeLine(BufferedWriter bw, String... params) throws IOException
+    {
+        for (int i = 0; i < params.length - 1; i++)
+        {
+            bw.write(params[i]);
+            bw.write('\t');
+        }
+        bw.write(params[params.length - 1]);
+    }","д���飬���Ʊ����ָ�
+@param bw
+@param params
+@throws IOException",2
+AhoCorasickDoubleArrayTrie.get,�˷������ڸ����ṩ�ļ���AhoCorasickDoubleArrayTrie�л�ȡ��Ӧ��ֵ�����ȣ�������exactMatchSearch(String key)�����Ҽ���ƥ������������ҵ���Ч�������򷵻ض�Ӧ����λ�õ�ֵ�����е�ֵ�����������Ч���򷵻�null��,���ݼ�����ֵ���������򷵻ض�Ӧ���,"public V get(String key)
+    {
+        int index = exactMatchSearch(key);
+        if (index >= 0)
+        {
+            return v[index];
+        }
+
+        return null;
+    }","��ȡֵ
+
+@param key ��
+@return",2
+ContinuousDistributions.LogGamma,�˷����������ʵ��Z�Ķ���٤������ֵ�����ȣ�������һ����������S���ñ����漰Z�ķ����������㡣���ţ�ʹ��S���������٤��ֵLG��LG�ǻ���Z���������������ϵõ��ġ����շ��ص�LGֵ��ʾ����Z�Ķ���٤������ֵ���˷���ʵ����һ�ָ߾��ȵĽ����㷨�����ڹ���٤�������Ķ�����,��������ֵ�Ķ���٤�����������ؽ��,"public static double LogGamma(double Z)
+    {
+        double S = 1.0 + 76.18009173 / Z - 86.50532033 / (Z + 1.0) + 24.01409822 / (Z + 2.0) - 1.231739516 / (Z + 3.0) + 0.00120858003 / (Z + 4.0) - 0.00000536382 / (Z + 5.0);
+        double LG = (Z - 0.5) * Math.log(Z + 4.5) - (Z + 4.5) + Math.log(S * 2.50662827465);
+
+        return LG;
+    }","Log Gamma Function
+
+@param Z
+@return",1
+ChangedFile.getRelativeName,����getRelativeName�����ļ������Դ�ļ��е����ơ����ȣ�ͨ������getAbsoluteFile()������ȡ�ļ��к��ļ��ľ���File���󡣽��ţ���StringUtils.cleanPath����·����ȷ��·���ָ���һ�¡�Ȼ��ʹ��Assert.stateȷ���ļ�ʵ����λ��Դ�ļ����С������֤ͨ��������·����ȥ��Դ�ļ���·��ǰ׺�Ĳ��֡�,�����ļ������Դ�ļ��е�·������,"public String getRelativeName() {
+		File folder = this.sourceFolder.getAbsoluteFile();
+		File file = this.file.getAbsoluteFile();
+		String folderName = StringUtils.cleanPath(folder.getPath());
+		String fileName = StringUtils.cleanPath(file.getPath());
+		Assert.state(fileName.startsWith(folderName), () -> ""The file "" + fileName
+				+ "" is not contained in the source folder "" + folderName);
+		return fileName.substring(folderName.length() + 1);
+	}","Return the name of the file relative to the source folder.
+@return the relative name",1
+FileSystemWatcher.addSourceFolders,�÷�����������Ҫ���ӵ�Դ�ļ��С��ڵ��ø÷���ʱ�������ȼ�鴫����ļ��м����Ƿ�Ϊ�ա�Ȼ�󣬸÷�����ͬ���������Ŀ��ڵ����ؽ�ÿ���ļ������ӵ������б��С���ע�⣬�˷����ڼ�������ʼ���ܱ����á�,����Ҫ���ӵ�Դ�ļ��У�ÿ���ļ�����ͬ�����б�������,"public void addSourceFolders(Iterable<File> folders) {
+		Assert.notNull(folders, ""Folders must not be null"");
+		synchronized (this.monitor) {
+			for (File folder : folders) {
+				addSourceFolder(folder);
+			}
+		}
+	}","Add source folders to monitor. Cannot be called after the watcher has been
+{@link #start() started}.
+@param folders the folders to monitor",1
+MaxEntModel.predict,�÷�������һ�������������ַ����ļ��ϣ�������ת��Ϊ�ַ�������󣬵�����һ�����ص� predict ����������Ԥ�����ɷֲ���,�������ļ���ת��Ϊ�ַ������鲢�������� predict ����,"public final List<Pair<String, Double>> predict(Collection<String> context)
+    {
+        return predict(context.toArray(new String[0]));
+    }","Ԥ��ֲ�
+
+@param context
+@return",1
+AbstractLoggingSystem.getSpringConfigLocations,�÷������ص�ǰϵͳ��Spring�����ļ�·�������ͨ��getStandardConfigLocations()��ȡ��׼������·����Ȼ���ÿ��·�����д����������׺�滻Ϊ"-spring."��ʽ�������޸ĺ��·�����顣,��ȡ���޸�Spring�����ļ�·��,"protected String[] getSpringConfigLocations() {
+		String[] locations = getStandardConfigLocations();
+		for (int i = 0; i < locations.length; i++) {
+			String extension = StringUtils.getFilenameExtension(locations[i]);
+			locations[i] = locations[i].substring(0,
+					locations[i].length() - extension.length() - 1) + ""-spring.""
+					+ extension;
+		}
+		return locations;
+	}","Return the spring config locations for this system. By default this method returns
+a set of locations based on {@link #getStandardConfigLocations()}.
+@return the spring config locations
+@see #getSpringInitializationConfig()",2
+SpringApplication.run,SpringApplication.run������һ����̬�������������ڴ�ָ������ҪԴ����SpringӦ�ó��򡣸÷���ʹ��Ĭ����������Ӧ�ó���ͨ������Ҫ���ص���ҪԴ���Ӧ�ó���������飬����һ��ConfigurableApplicationContextʵ���������������е�Ӧ�ó��򻷾�������ʵ���У��÷�����������һ�����ذ汾��run������������ҪԴ���װΪ���鴫�ݸ��÷�����,����SpringӦ�ó��򲢷����������ģ�ʹ��Ĭ�����á�,"public static ConfigurableApplicationContext run(Class<?> primarySource,
+			String... args) {
+		return run(new Class<?>[] { primarySource }, args);
+	}","Static helper that can be used to run a {@link SpringApplication} from the
+specified source using default settings.
+@param primarySource the primary source to load
+@param args the application arguments (usually passed from a Java main method)
+@return the running {@link ApplicationContext}",2
+AbstractFilterRegistrationBean.setUrlPatterns,���ù�������ע���URLģʽ���滻֮ǰָ����URLģʽ���������ȼ�鴫���urlPatterns�����Ƿ�Ϊnull��Ȼ����ת��ΪLinkedHashSet���Ƴ��ظ�������˳��,���ù�������URLģʽ���ϣ��滻����ģʽ��,"public void setUrlPatterns(Collection<String> urlPatterns) {
+		Assert.notNull(urlPatterns, ""UrlPatterns must not be null"");
+		this.urlPatterns = new LinkedHashSet<>(urlPatterns);
+	}","Set the URL patterns that the filter will be registered against. This will replace
+any previously specified URL patterns.
+@param urlPatterns the URL patterns
+@see #setServletRegistrationBeans
+@see #setServletNames",2
+InfoPropertiesInfoContributor.copyIfSet,�÷������ڼ������ļ��Ƿ��ڵ�ǰ��������ֵ������ü���ֵ�����Ҳ�Ϊ�գ��򽫴˼���ֵ������Ŀ�����Զ����С���ͨ���ӵ�ǰ���Զ����л�ȡ����ֵ��ʹ��StringUtils.hasText�������ֵ�Ƿ�Ϊ�գ�Ȼ�󽫼�ֵ�Է���Ŀ�����Զ���,���������ķǿ�ֵ���Ƶ�Ŀ�����Զ�����,"protected void copyIfSet(Properties target, String key) {
+		String value = this.properties.get(key);
+		if (StringUtils.hasText(value)) {
+			target.put(key, value);
+		}
+	}","Copy the specified key to the target {@link Properties} if it is set.
+@param target the target properties to update
+@param key the key",2
+CustomDictionary.remove,�÷������ڴ�CustomDictionary���Ƴ�ָ���ĵ��ʡ����ȣ�����Ƿ����ñ�׼�����ã�������ã��򽫵��ʽ����ַ�ת����Ȼ�󣬼��trie�����Ƿ�Ϊ�ա����trie��Ϊ�գ�������Ƴ�ָ���ĵ��ʡ���Ҫע����ǣ�ɾ�������Ƕ�̬�ģ�����־û����ʵ��ļ���,�Ƴ�ָ���ĵ��ʣ���̬�������ᱣ�浽�ļ�,"public static void remove(String key)
+    {
+        if (HanLP.Config.Normalization) key = CharTable.convert(key);
+        if (trie == null) return;
+        trie.remove(key);
+    }","ɾ������<br>
+��̬��ɾ����־û����ʵ��ļ�
+
+@param key",1
+ProjectGenerationRequest.generateUrl,�÷�������������Ŀ���ɵ�URI�����ȣ�ʹ�ø�����serviceUrl��ʼ��һ��URIBuilder���󣬽���ͨ��determineProjectType����ȷ����Ŀ���ͣ���������ID�Ͳ���·����Ȼ�󣬼�鲢��������ĸ��ֲ�������dependencies��groupId��artifactId�ȣ���URI�С��������ɲ����ع����õ�URI���������URISyntaxException�����׳�ReportableException�쳣��,������Ŀ���ɵ�URI��������Ŀ���ͺͲ���,"URI generateUrl(InitializrServiceMetadata metadata) {
+		try {
+			URIBuilder builder = new URIBuilder(this.serviceUrl);
+			StringBuilder sb = new StringBuilder();
+			if (builder.getPath() != null) {
+				sb.append(builder.getPath());
+			}
+
+			ProjectType projectType = determineProjectType(metadata);
+			this.type = projectType.getId();
+			sb.append(projectType.getAction());
+			builder.setPath(sb.toString());
+
+			if (!this.dependencies.isEmpty()) {
+				builder.setParameter(""dependencies"",
+						StringUtils.collectionToCommaDelimitedString(this.dependencies));
+			}
+
+			if (this.groupId != null) {
+				builder.setParameter(""groupId"", this.groupId);
+			}
+			String resolvedArtifactId = resolveArtifactId();
+			if (resolvedArtifactId != null) {
+				builder.setParameter(""artifactId"", resolvedArtifactId);
+			}
+			if (this.version != null) {
+				builder.setParameter(""version"", this.version);
+			}
+			if (this.name != null) {
+				builder.setParameter(""name"", this.name);
+			}
+			if (this.description != null) {
+				builder.setParameter(""description"", this.description);
+			}
+			if (this.packageName != null) {
+				builder.setParameter(""packageName"", this.packageName);
+			}
+			if (this.type != null) {
+				builder.setParameter(""type"", projectType.getId());
+			}
+			if (this.packaging != null) {
+				builder.setParameter(""packaging"", this.packaging);
+			}
+			if (this.javaVersion != null) {
+				builder.setParameter(""javaVersion"", this.javaVersion);
+			}
+			if (this.language != null) {
+				builder.setParameter(""language"", this.language);
+			}
+			if (this.bootVersion != null) {
+				builder.setParameter(""bootVersion"", this.bootVersion);
+			}
+
+			return builder.build();
+		}
+		catch (URISyntaxException ex) {
+			throw new ReportableException(
+					""Invalid service URL ("" + ex.getMessage() + "")"");
+		}
+	}","Generates the URI to use to generate a project represented by this request.
+@param metadata the metadata that describes the service
+@return the project generation URI",2
+CRFSegment.resizeArray,�÷���ͨ������һ���µ����鲢ʹ��`System.arraycopy`����ԭ����Ԫ���������ַ�����ά����Ĵ�С��������������鳤���������Ĵ�С��ͬ���򷵻�ԭ���顣���򣬴���һ�������飬��СΪ����ָ����`size`������ԭ�����е�Ԫ�ظ��Ƶ�����������У�Ȼ�󷵻������顣,�����ַ�����ά����Ĵ�С������������,"private static String[][] resizeArray(String[][] array, int size)
+    {
+        if (array.length == size) return array;
+        String[][] nArray = new String[size][];
+        System.arraycopy(array, 0, nArray, 0, size);
+        return nArray;
+    }","������ʣ�ԭ�ӷִʿ��ܻᵼ�±����ԭ���Ķ�
+
+@param array
+@param size
+@return",2
+FileUtils.removeDuplicatesFromOutputDirectory,�÷������ڴ����Ŀ¼��ɾ����ԴĿ¼���ظ����ڵ��ļ���ͨ���ݹ�ɨ��ԴĿ¼������ÿһ����⵽�����Ŀ¼���ļ�ͬ�����ļ����������һ����д���ļ��Ҳ���Ŀ¼����������Ŀ¼��ɾ����,�����Ŀ¼ɾ����ԴĿ¼���Ѵ��ڵ��ظ��ļ�,"public static void removeDuplicatesFromOutputDirectory(File outputDirectory,
+			File originDirectory) {
+		if (originDirectory.isDirectory()) {
+			for (String name : originDirectory.list()) {
+				File targetFile = new File(outputDirectory, name);
+				if (targetFile.exists() && targetFile.canWrite()) {
+					if (!targetFile.isDirectory()) {
+						targetFile.delete();
+					}
+					else {
+						FileUtils.removeDuplicatesFromOutputDirectory(targetFile,
+								new File(originDirectory, name));
+					}
+				}
+			}
+		}
+	}","Utility to remove duplicate files from an ""output"" directory if they already exist
+in an ""origin"". Recursively scans the origin directory looking for files (not
+directories) that exist in both places and deleting the copy.
+@param outputDirectory the output directory
+@param originDirectory the origin directory",2
+HealthEndpoint.healthForComponentInstance,�÷�������ָ������������ض�ʵ���Ľ���״̬��������������CompositeHealthIndicator���ʵ�������ڣ��򷵻�null������ͨ���Ӵ��ݵ�healthIndicator�����л�ȡǶ�׽���ָ�꣬Ȼ���ȡʵ����Ƕ�׽���ָ�꣬������ڣ��������health()�������ؽ���״̬��,��ȡ���ʵ���Ľ���״̬�����ʵ���������򷵻�null��,"@ReadOperation
+	public Health healthForComponentInstance(@Selector String component,
+			@Selector String instance) {
+		HealthIndicator indicator = getNestedHealthIndicator(this.healthIndicator,
+				component);
+		HealthIndicator nestedIndicator = getNestedHealthIndicator(indicator, instance);
+		return (nestedIndicator != null) ? nestedIndicator.health() : null;
+	}","Return the {@link Health} of a particular {@code instance} managed by the specified
+{@code component} or {@code null} if that particular component is not a
+{@link CompositeHealthIndicator} or if such instance does not exist.
+@param component the name of a particular {@link CompositeHealthIndicator}
+@param instance the name of an instance managed by that component
+@return the {@link Health} for the component instance of {@code null}",2
+Cluster.remove_document,"This method attempts to remove the specified document from a cluster. It iterates over the list of documents and if it finds a document that equals the provided Document object, it recursively calls itself with the document as the parameter. However, the current implementation might lead to infinite recursion if the document is found.","Attempts to remove specified document from cluster, potentially causing infinite recursion.","void remove_document(Document doc)
+    {
+        for (Document<K> document : documents_)
+        {
+            if (document.equals(doc))
+            {
+                remove_document(doc);
+                return;
+            }
+        }
+    }","Remove a document from this cluster.
+
+@param doc the pointer of a document object",2
+BinTrie.keySet,�÷���`keySet`���ص�ǰBinTrie�������м��ļ��ϡ�ʹ��TreeSet�洢����ȷ��������Ȼ˳�����򡣷���ͨ������entrySet���ϣ���ÿ����Ŀ�ļ����ӵ�TreeSet�У����շ��ظ�TreeSet��,�������м������򼯺�,"public Set<String> keySet()
+    {
+        TreeSet<String> keySet = new TreeSet<String>();
+        for (Map.Entry<String, V> entry : entrySet())
+        {
+            keySet.add(entry.getKey());
+        }
+
+        return keySet;
+    }","������
+@return",2
+ClusterAnalyzer.evaluate,�÷����������������㷨�����ܡ����ȼ��������ļ���·���Ƿ���Ч��Ȼ���ʼ��һ��ClusterAnalyzer���󡣱�����Ŀ¼�µ�ÿ���ļ��У���ȡ�ļ����ݲ��������ӵ��������С�������ĵ����غ󣬸���ָ�����㷨��KMeans��Repeated Bisection�����о��ࡣ����ÿ������F1�����������շ��ؼ�Ȩƽ��F1������,���������㷨����ȡ�ļ��У������ĵ������о������F1������,"public static double evaluate(String folderPath, String algorithm)
+    {
+        if (folderPath == null) throw new IllegalArgumentException(""���� folderPath == null"");
+        File root = new File(folderPath);
+        if (!root.exists()) throw new IllegalArgumentException(String.format(""Ŀ¼ %s ������"", root.getAbsolutePath()));
+        if (!root.isDirectory())
+            throw new IllegalArgumentException(String.format(""Ŀ¼ %s ����һ��Ŀ¼"", root.getAbsolutePath()));
+
+        ClusterAnalyzer<String> analyzer = new ClusterAnalyzer<String>();
+        File[] folders = root.listFiles();
+        if (folders == null) return 1.;
+        logger.start(""��Ŀ¼:%s\n������...\n"", folderPath);
+        int docSize = 0;
+        int[] ni = new int[folders.length];
+        String[] cat = new String[folders.length];
+        int offset = 0;
+        for (File folder : folders)
+        {
+            if (folder.isFile()) continue;
+            File[] files = folder.listFiles();
+            if (files == null) continue;
+            String category = folder.getName();
+            cat[offset] = category;
+            logger.out(""[%s]..."", category);
+            int b = 0;
+            int e = files.length;
+
+            int logEvery = (int) Math.ceil((e - b) / 10000f);
+            for (int i = b; i < e; i++)
+            {
+                analyzer.addDocument(folder.getName() + "" "" + files[i].getName(), IOUtil.readTxt(files[i].getAbsolutePath()));
+                if (i % logEvery == 0)
+                {
+                    logger.out(""%c[%s]...%.2f%%"", 13, category, MathUtility.percentage(i - b + 1, e - b));
+                }
+                ++docSize;
+                ++ni[offset];
+            }
+            logger.out("" %d ƪ�ĵ�\n"", e - b);
+            ++offset;
+        }
+        logger.finish("" ������ %d ����Ŀ,�� %d ƪ�ĵ�\n"", folders.length, docSize);
+        logger.start(algorithm + ""������..."");
+        List<Set<String>> clusterList = algorithm.replaceAll(""[-\\s]"", """").toLowerCase().equals(""kmeans"") ?
+            analyzer.kmeans(ni.length) : analyzer.repeatedBisection(ni.length);
+        logger.finish("" ��ϡ�\n"");
+        double[] fi = new double[ni.length];
+        for (int i = 0; i < ni.length; i++)
+        {
+            for (Set<String> j : clusterList)
+            {
+                int nij = 0;
+                for (String d : j)
+                {
+                    if (d.startsWith(cat[i]))
+                        ++nij;
+                }
+                if (nij == 0) continue;
+                double p = nij / (double) (j.size());
+                double r = nij / (double) (ni[i]);
+                double f = 2 * p * r / (p + r);
+                fi[i] = Math.max(fi[i], f);
+            }
+        }
+        double f = 0;
+        for (int i = 0; i < fi.length; i++)
+        {
+            f += fi[i] * ni[i] / docSize;
+        }
+        return f;
+    }","ѵ��ģ��
+
+@param folderPath �������ϵĸ�Ŀ¼.Ŀ¼�����������½ṹ:<br>
+��Ŀ¼<br>
+������ ����A<br>
+��   ������ 1.txt<br>
+��   ������ 2.txt<br>
+��   ������ 3.txt<br>
+������ ����B<br>
+��   ������ 1.txt<br>
+��   ������ ...<br>
+������ ...<br>
+�ļ���һ����Ҫ����������,Ҳ����Ҫ��txt��Ϊ��׺��,��һ����Ҫ���ı��ļ�.
+@param algorithm  kmeans �� repeated bisection
+@throws IOException �κο��ܵ�IO�쳣",1
+Sentence.toWordTagArray,�÷�������ǰ����ľ���ת��Ϊһ�������ʺʹ��Ա�ǩ�Ķ�ά���顣���ȵ���toSimpleWordList������ȡ�ʶ����б���Ȼ���ʼ��һ�������е��ַ�����ά���飬ÿ�еĳ���Ϊ���б��Ĵ�С���������б�����ÿ���ʶ����ֵ�ͱ�ǩ�ֱ��赽����������У����շ��ظö�ά���顣,������ת��Ϊһ�������ʺʹ��Ա�ǩ�Ķ�ά���顣,"public String[][] toWordTagArray()
+    {
+        List<Word> wordList = toSimpleWordList();
+        String[][] pair = new String[2][wordList.size()];
+        Iterator<Word> iterator = wordList.iterator();
+        for (int i = 0; i < pair[0].length; i++)
+        {
+            Word word = iterator.next();
+            pair[0][i] = word.value;
+            pair[1][i] = word.label;
+        }
+        return pair;
+    }","word pos
+
+@return",1
+LoggingApplicationListener.initialize,�÷�������ͨ��������Environment������·�������ƫ�ó�ʼ����־ϵͳ�����岽�������Ӧ�û�����ص���־ϵͳ���ԣ���ȡ��־�ļ���Ӧ�õ�ϵͳ���ԣ���ʼ��������־����������־ϵͳ����־�ļ�����������ʼ��������־���𣬲�������Ҫע��رչ��ӡ�,��ʼ����־ϵͳ�����ݻ�������·��������־���á�,"protected void initialize(ConfigurableEnvironment environment,
+			ClassLoader classLoader) {
+		new LoggingSystemProperties(environment).apply();
+		LogFile logFile = LogFile.get(environment);
+		if (logFile != null) {
+			logFile.applyToSystemProperties();
+		}
+		initializeEarlyLoggingLevel(environment);
+		initializeSystem(environment, this.loggingSystem, logFile);
+		initializeFinalLoggingLevels(environment, this.loggingSystem);
+		registerShutdownHookIfNecessary(environment, this.loggingSystem);
+	}","Initialize the logging system according to preferences expressed through the
+{@link Environment} and the classpath.
+@param environment the environment
+@param classLoader the classloader",1
+SpringApplication.load,�÷�����ָ����source���ص�Ӧ�ó����������С����ȼ�������־��Ȼ�󴴽�һ��BeanDefinitionLoaderʵ�����ڼ���Bean���塣���ݿ��õ�beanNameGenerator��resourceLoader��environment������BeanDefinitionLoader����������ú󣬵���loader��load����ʵ�ʼ���bean��,��sources���ص�Ӧ����������,"protected void load(ApplicationContext context, Object[] sources) {
+		if (logger.isDebugEnabled()) {
+			logger.debug(
+					""Loading source "" + StringUtils.arrayToCommaDelimitedString(sources));
+		}
+		BeanDefinitionLoader loader = createBeanDefinitionLoader(
+				getBeanDefinitionRegistry(context), sources);
+		if (this.beanNameGenerator != null) {
+			loader.setBeanNameGenerator(this.beanNameGenerator);
+		}
+		if (this.resourceLoader != null) {
+			loader.setResourceLoader(this.resourceLoader);
+		}
+		if (this.environment != null) {
+			loader.setEnvironment(this.environment);
+		}
+		loader.load();
+	}","Load beans into the application context.
+@param context the context to load beans into
+@param sources the sources to load",1
+Segment.seg,�÷�����������ַ�������зִʡ����ȼ�������Ƿ�Ϊnull�������Բ�Ϊ�ա������������ΪNormalization�����ã���ͨ������CharTable.normalization�����ַ���һ����������󣬵���segSentence����ִ��ʵ�ʵķִʴ����������ذ����ִʽ����Term�����б���,�ִ��������������ַ����鲢���طִʽ���б���,"public List<Term> seg(char[] text)
+    {
+        assert text != null;
+        if (HanLP.Config.Normalization)
+        {
+            CharTable.normalization(text);
+        }
+        return segSentence(text);
+    }","�ִ�
+
+@param text ���ִ��ı�
+@return �����б�",2
+AnnotationConfigServletWebApplicationContext.setBeanNameGenerator,The `setBeanNameGenerator` method in `AnnotationConfigServletWebApplicationContext` is used to set a custom `BeanNameGenerator` for use with the `AnnotatedBeanDefinitionReader` and `ClassPathBeanDefinitionScanner`. The method updates the `beanNameGenerator` in both the reader and scanner components of the application context and registers this generator as a singleton in the bean factory using a constant identifier. This configuration should be set before calling methods `register` and/or `scan` to ensure it takes effect during bean definition registration.,"Set custom `BeanNameGenerator` for reader and scanner, register it in the bean factory.","public void setBeanNameGenerator(BeanNameGenerator beanNameGenerator) {
+		this.reader.setBeanNameGenerator(beanNameGenerator);
+		this.scanner.setBeanNameGenerator(beanNameGenerator);
+		this.getBeanFactory().registerSingleton(
+				AnnotationConfigUtils.CONFIGURATION_BEAN_NAME_GENERATOR,
+				beanNameGenerator);
+	}","Provide a custom {@link BeanNameGenerator} for use with
+{@link AnnotatedBeanDefinitionReader} and/or
+{@link ClassPathBeanDefinitionScanner}, if any.
+<p>
+Default is
+{@link org.springframework.context.annotation.AnnotationBeanNameGenerator}.
+<p>
+Any call to this method must occur prior to calls to {@link #register(Class...)}
+and/or {@link #scan(String...)}.
+@param beanNameGenerator the bean name generator
+@see AnnotatedBeanDefinitionReader#setBeanNameGenerator
+@see ClassPathBeanDefinitionScanner#setBeanNameGenerator",1
+DocumentRoot.getValidDirectory,�÷�������һ�������ĵ���Ŀ¼�������Ŀ¼��Ч������������Ŀ¼�������¼һ�����沢����null���������δӲ�ͬ����Դ��directory��WarFileDocumentRoot��ExplodedWarFileDocumentRoot��CommonDocumentRoot�����Ի�ȡ��ЧĿ¼��ֱ���ҵ�һ����Ч·��Ϊֹ������־���Լ������ã�����¼���ĵ���Ŀ¼������ӡ���ҵ����ĵ���Ŀ¼��,��ȡ��Ч�ĵ�Ŀ¼�����¼���沢����null��,"public final File getValidDirectory() {
+		File file = this.directory;
+		file = (file != null) ? file : getWarFileDocumentRoot();
+		file = (file != null) ? file : getExplodedWarFileDocumentRoot();
+		file = (file != null) ? file : getCommonDocumentRoot();
+		if (file == null && this.logger.isDebugEnabled()) {
+			logNoDocumentRoots();
+		}
+		else if (this.logger.isDebugEnabled()) {
+			this.logger.debug(""Document root: "" + file);
+		}
+		return file;
+	}","Returns the absolute document root when it points to a valid directory, logging a
+warning and returning {@code null} otherwise.
+@return the valid document root",2
+ConfigurationPropertiesReportEndpoint.safeSerialize,"This method safely serializes a given bean into a map using an ObjectMapper. It attempts to convert the provided bean into a map using the convertValue method of ObjectMapper. If the serialization process fails, it catches the exception and returns a map containing an error message specifying the prefix of the bean that could not be serialized. This approach avoids throwing exceptions and provides an error message within the result map instead.","Safely serialize a bean to a map, returning an error map if serialization fails.","@SuppressWarnings(""unchecked"")
+	private Map<String, Object> safeSerialize(ObjectMapper mapper, Object bean,
+			String prefix) {
+		try {
+			return new HashMap<>(mapper.convertValue(bean, Map.class));
+		}
+		catch (Exception ex) {
+			return new HashMap<>(Collections.singletonMap(""error"",
+					""Cannot serialize '"" + prefix + ""'""));
+		}
+	}","Cautiously serialize the bean to a map (returning a map with an error message
+instead of throwing an exception if there is a problem).
+@param mapper the object mapper
+@param bean the source bean
+@param prefix the prefix
+@return the serialized instance",1
+JpaProperties.determineDatabase,�÷�������ȷ��Ҫʹ�õ����ݿ⡣���ʵ������'database'�Ѿ����ڣ��򷵻ظ����ݿ�; ���򣬵���'DatabaseLookup.getDatabase'������ȡ����Դ��Ӧ�����ݿ⡣�÷��������ã�����ʹ��JPA�������Զ����Ҫʹ�õ����ݿ⡣,�������ݿ����û�ͨ������Դ��ȡ���ݿ�,"@Deprecated
+	public Database determineDatabase(DataSource dataSource) {
+		if (this.database != null) {
+			return this.database;
+		}
+		return DatabaseLookup.getDatabase(dataSource);
+	}","Determine the {@link Database} to use based on this configuration and the primary
+{@link DataSource}.
+@param dataSource the auto-configured data source
+@return {@code Database}
+@deprecated since 2.2.0 in favor of letting the JPA container detect the database
+to use.",2
+DocVectorModel.nearest,"�÷�������һ���ַ�����ѯ������������ `queryNearest` �����Ի����ò�ѯ�����Ƶ�ǰ 10 ���ĵ�����������Ϊ `List<Map.Entry<Integer, Float>>`������ÿ����Ŀ�����ĵ���Ψһ��ʶ�������ƶȵ÷֡��˷������ڴӴ����ĵ����м�������ϲ�ѯ���ĵ�����ʵ�ָ�Ч����Ϣ���ҡ�",�������ѯ�����Ƶ�10���ĵ�,"public List<Map.Entry<Integer, Float>> nearest(String query)
+    {
+        return queryNearest(query, 10);
+    }","��ѯ�����Ƶ�ǰ10���ĵ�
+
+@param query ��ѯ��䣨����˵һ���ĵ������ݣ�
+@return",2
+AstUtils.hasAtLeastOneAnnotation,�÷�����������AnnotatedNode�Ƿ����ָ����һ������ע�⡣ͨ�������ڵ������ע�⣬���ṩ��ע���б����м�ģʽƥ�䣬ֻҪ�ҵ�һ��ƥ��ͷ���true�����û��ƥ�䣬����false������ͨ��������ÿ��ע��ڵ��������ʵ��ƥ��ġ�,���ڵ����Ƿ����ָ����ע��,"public static boolean hasAtLeastOneAnnotation(AnnotatedNode node,
+			String... annotations) {
+		for (AnnotationNode annotationNode : node.getAnnotations()) {
+			for (String annotation : annotations) {
+				if (PatternMatchUtils.simpleMatch(annotation,
+						annotationNode.getClassNode().getName())) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}","Determine if an {@link AnnotatedNode} has one or more of the specified annotations.
+N.B. the annotation type names are not normally fully qualified.
+@param node the node to examine
+@param annotations the annotations to look for
+@return {@code true} if at least one of the annotations is found, otherwise
+{@code false}",2
+RestTemplateBuilder.messageConverters,�˷����������ý���RestTemplate��ʹ�õ�HttpMessageConverters��ͨ���÷��������ת�������滻�κ���ǰ���õ�ת�����������ô˷��������������ṩ��messageConverters�б��滻RestTemplate��Ĭ��ת���������������һ��HttpMessageConverter���飬�ڷ����ڲ�������ʹ��Assert.notNull��֤���벻Ϊ�գ�Ȼ������ת��Ϊ�б������ݸ���һ�����ط������н�һ�����������շ���һ���µ�RestTemplateBuilderʵ����,����RestTemplateʹ�õ�HttpMessageConverters���滻Ĭ��ת������,"public RestTemplateBuilder messageConverters(
+			HttpMessageConverter<?>... messageConverters) {
+		Assert.notNull(messageConverters, ""MessageConverters must not be null"");
+		return messageConverters(Arrays.asList(messageConverters));
+	}","Set the {@link HttpMessageConverter HttpMessageConverters} that should be used with
+the {@link RestTemplate}. Setting this value will replace any previously configured
+converters and any converters configured on the builder will replace RestTemplate's
+default converters.
+@param messageConverters the converters to set
+@return a new builder instance
+@see #additionalMessageConverters(HttpMessageConverter...)",2
+WebServiceTemplateBuilder.customizers,�÷����������ý�Ӧ����WebServiceTemplate��WebServiceTemplateCustomizerʵ������Щ������������˳���ڹ���������Ӧ��֮��Ӧ�á��˷������ȶ��Դ����customizers���鲻Ϊ�գ�Ȼ����Щ������ת��Ϊһ���б������ݸ���һ�����ص�customizers���������ô�ֵ���滻�κ���ǰ���õĶ�������,����WebServiceTemplate�Ķ��������滻�������á�,"public WebServiceTemplateBuilder customizers(
+			WebServiceTemplateCustomizer... customizers) {
+		Assert.notNull(customizers, ""Customizers must not be null"");
+		return customizers(Arrays.asList(customizers));
+	}","Set {@link WebServiceTemplateCustomizer WebServiceTemplateCustomizers} that should
+be applied to the {@link WebServiceTemplate}. Customizers are applied in the order
+that they were added after builder configuration has been applied. Setting this
+value will replace any previously configured customizers.
+@param customizers the customizers to set
+@return a new builder instance
+@see #additionalCustomizers(WebServiceTemplateCustomizer...)",2
+SpringApplication.createApplicationContext,�˷������𴴽�SpringӦ�ó����ApplicationContext�������ȼ���Ƿ��Ѿ���ʽ������applicationContextClass�����û�У�����webApplicationTypeѡ����Ӧ��Ĭ��ApplicationContext�ࣨSERVLET��REACTIVE������������ѡ������з���ClassNotFoundException�����׳��쳣����ʾ�û�ָ��applicationContextClass�����ʹ��BeanUtils.instantiateClassʵ����������ApplicationContext����,���������غ��ʵ�ApplicationContextʵ����,"protected ConfigurableApplicationContext createApplicationContext() {
+		Class<?> contextClass = this.applicationContextClass;
+		if (contextClass == null) {
+			try {
+				switch (this.webApplicationType) {
+				case SERVLET:
+					contextClass = Class.forName(DEFAULT_SERVLET_WEB_CONTEXT_CLASS);
+					break;
+				case REACTIVE:
+					contextClass = Class.forName(DEFAULT_REACTIVE_WEB_CONTEXT_CLASS);
+					break;
+				default:
+					contextClass = Class.forName(DEFAULT_CONTEXT_CLASS);
+				}
+			}
+			catch (ClassNotFoundException ex) {
+				throw new IllegalStateException(
+						""Unable create a default ApplicationContext, ""
+								+ ""please specify an ApplicationContextClass"",
+						ex);
+			}
+		}
+		return (ConfigurableApplicationContext) BeanUtils.instantiateClass(contextClass);
+	}","Strategy method used to create the {@link ApplicationContext}. By default this
+method will respect any explicitly set application context or application context
+class before falling back to a suitable default.
+@return the application context (not yet refreshed)
+@see #setApplicationContextClass(Class)",2
+CloudFoundryCustomContextPathExample.servletWebServerFactory,�÷���������һ��TomcatServletWebServerFactory bean����д����prepareContext�������˷�����Tomcat��������������һ����ΪStandardContext���������ģ����ṩ�ض���Cloud FoundryӦ�ó����·��"/cloudfoundryapplication"�����������������������ڼ�������Servlet������ʼ�������������������ķ��ʣ�Ȼ�������ӵ�������,����Tomcat�������Զ���������·��Ϊ��/cloudfoundryapplication��,"@Bean
+	public TomcatServletWebServerFactory servletWebServerFactory() {
+		return new TomcatServletWebServerFactory() {
+
+			@Override
+			protected void prepareContext(Host host,
+					ServletContextInitializer[] initializers) {
+				super.prepareContext(host, initializers);
+				StandardContext child = new StandardContext();
+				child.addLifecycleListener(new Tomcat.FixContextListener());
+				child.setPath(""/cloudfoundryapplication"");
+				ServletContainerInitializer initializer = getServletContextInitializer(
+						getContextPath());
+				child.addServletContainerInitializer(initializer, Collections.emptySet());
+				child.setCrossContext(true);
+				host.addChild(child);
+			}
+
+		};
+	}",tag::configuration[],2
+LogFile.applyTo,����־�ļ���ϸ��ϢӦ�õ�ָ����Properties���󣬽�·����Ϣд��LOG_PATH��������־�ļ����ַ�����ʾд��LOG_FILE����,Ӧ����־�ļ�ϸ�ڵ�Properties����,"public void applyTo(Properties properties) {
+		put(properties, LoggingSystemProperties.LOG_PATH, this.path);
+		put(properties, LoggingSystemProperties.LOG_FILE, toString());
+	}","Apply log file details to {@code LOG_PATH} and {@code LOG_FILE} map entries.
+@param properties the properties to apply to",2
+SpringApplication.logStartupProfileInfo,�÷������ڼ�¼SpringӦ�����������л������õĻ�Ծprofile��Ϣ������־������Ϊ��Ϣ����Info��ʱ��������Ӧ�������ĵĻ�Ծprofile���顣���û�����û�Ծprofile�������Ĭ�ϵ�profile������Ϊ��ʹ�á�����趨�˻�Ծprofile�����������Щprofile����Ϣ�������������֪��Ӧ��������ʱʹ������Щ�������á�,��¼Ӧ�ó�������ʱ�Ļ�Ծprofile��Ϣ,"protected void logStartupProfileInfo(ConfigurableApplicationContext context) {
+		Log log = getApplicationLog();
+		if (log.isInfoEnabled()) {
+			String[] activeProfiles = context.getEnvironment().getActiveProfiles();
+			if (ObjectUtils.isEmpty(activeProfiles)) {
+				String[] defaultProfiles = context.getEnvironment().getDefaultProfiles();
+				log.info(""No active profile set, falling back to default profiles: ""
+						+ StringUtils.arrayToCommaDelimitedString(defaultProfiles));
+			}
+			else {
+				log.info(""The following profiles are active: ""
+						+ StringUtils.arrayToCommaDelimitedString(activeProfiles));
+			}
+		}
+	}","Called to log active profile information.
+@param context the application context",1
+JSONObject.putOpt,"�÷����ڲ���name��value����Ϊnullʱ����Ч�ڵ���put(name, value)������ָ�����������ӵ�JSONObject�����С�����һ����Ϊnull����ִ���κβ�����ֱ�ӷ��ص�ǰ��JSONObject����������Ʊ����˽�null��Ϊkey��value����JSONObject��",��name��value����Ϊnullʱ�������Ե�JSONObject�����򲻲�����,"public JSONObject putOpt(String name, Object value) throws JSONException {
+		if (name == null || value == null) {
+			return this;
+		}
+		return put(name, value);
+	}","Equivalent to {@code put(name, value)} when both parameters are non-null; does
+nothing otherwise.
+@param name the name of the property
+@param value the value of the property
+@return this object.
+@throws JSONException if an error occurs",1
+DoubleArrayTrie.commonPrefixSearchWithValue,"This method performs an optimized prefix search on a character array starting from a specified position. It utilizes a double array trie structure to find all common prefixes within the given range of characters. The search process involves traversing through a base and check array to check state transitions. It adds any matched prefix and its associated value to a linked list which is returned as the result. During the search, state transitions are calculated and checked for validity, ensuring that found prefixes correspond to words by verifying base and check conditions.","Performs prefix search in a character array using double array trie, returning matching prefixes and values.","public LinkedList<Map.Entry<String, V>> commonPrefixSearchWithValue(char[] keyChars, int begin)
+    {
+        int len = keyChars.length;
+        LinkedList<Map.Entry<String, V>> result = new LinkedList<Map.Entry<String, V>>();
+        int b = base[0];
+        int n;
+        int p;
+
+        for (int i = begin; i < len; ++i)
+        {
+            p = b;
+            n = base[p];
+            if (b == check[p] && n < 0)         // base[p] == check[p] && base[p] < 0 �鵽һ����
+            {
+                result.add(new AbstractMap.SimpleEntry<String, V>(new String(keyChars, begin, i - begin), v[-n - 1]));
+            }
+
+            p = b + (int) (keyChars[i]) + 1;    // ״̬ת�� p = base[char[i-1]] + char[i] + 1
+            // ���������ܲ����±�Խ�磬�����Ϊif (p < size && b == check[p])�����߶����һЩ�ڴ�
+            if (b == check[p])                  // base[char[i-1]] == check[base[char[i-1]] + char[i] + 1]
+                b = base[p];
+            else
+                return result;
+        }
+
+        p = b;
+        n = base[p];
+
+        if (b == check[p] && n < 0)
+        {
+            result.add(new AbstractMap.SimpleEntry<String, V>(new String(keyChars, begin, len - begin), v[-n - 1]));
+        }
+
+        return result;
+    }","�Ż���ǰ׺��ѯ�����Ը����ַ�����
+
+@param keyChars
+@param begin
+@return",1
+Restarter.start,"This method attempts to start the application by invoking the doStart method, which returns an error if the start fails. The method repeatedly tries to start the application and processes the resulting error using a provided FailureHandler. If the FailureHandler returns Outcome.ABORT, the start process is terminated. It throws an Exception if there are errors during the process.",Attempts to start an application and handle failures using a given FailureHandler.,"protected void start(FailureHandler failureHandler) throws Exception {
+		do {
+			Throwable error = doStart();
+			if (error == null) {
+				return;
+			}
+			if (failureHandler.handle(error) == Outcome.ABORT) {
+				return;
+			}
+		}
+		while (true);
+	}","Start the application.
+@param failureHandler a failure handler for application that won't start
+@throws Exception in case of errors",2
+AbstractErrorController.resolveErrorView,�÷������ڽ����ض��Ĵ�����ͼ�������ε����Ѷ����ErrorViewResolver�б��е�ÿһ�������������Ի�ȡ������ͼ�����ĳ�����������طǿյ�ModelAndView����÷��������������ModelAndViewʵ�������û���ҵ����ʵĴ�����ͼ���򷵻�null����ʾӦʹ��Ĭ�����á�,����������ͼ�����ε���ErrorViewResolver�������ҵ���ModelAndView��null��,"protected ModelAndView resolveErrorView(HttpServletRequest request,
+			HttpServletResponse response, HttpStatus status, Map<String, Object> model) {
+		for (ErrorViewResolver resolver : this.errorViewResolvers) {
+			ModelAndView modelAndView = resolver.resolveErrorView(request, status, model);
+			if (modelAndView != null) {
+				return modelAndView;
+			}
+		}
+		return null;
+	}","Resolve any specific error views. By default this method delegates to
+{@link ErrorViewResolver ErrorViewResolvers}.
+@param request the request
+@param response the response
+@param status the HTTP status
+@param model the suggested model
+@return a specific {@link ModelAndView} or {@code null} if the default should be
+used
+@since 1.4.0",2
+RestTemplateBuilder.additionalInterceptors,"This method adds additional ClientHttpRequestInterceptors to the RestTemplate. It ensures the provided interceptors are not null and then calls an overloaded method with a list of these interceptors, returning a new RestTemplateBuilder instance.","Adds extra interceptors to RestTemplate, returning a new builder.","public RestTemplateBuilder additionalInterceptors(
+			ClientHttpRequestInterceptor... interceptors) {
+		Assert.notNull(interceptors, ""interceptors must not be null"");
+		return additionalInterceptors(Arrays.asList(interceptors));
+	}","Add additional {@link ClientHttpRequestInterceptor ClientHttpRequestInterceptors}
+that should be used with the {@link RestTemplate}.
+@param interceptors the interceptors to add
+@return a new builder instance
+@since 1.4.1
+@see #interceptors(ClientHttpRequestInterceptor...)",2
+AutoConfigurationImportSelector.handleInvalidExcludes,����ָ������Ч�ų����ÿ����Ч�ų����ʽ��Ϊһ�������������ַ��������׳�IllegalStateException�쳣��ָ����Щ�಻���Զ������ࡣ,������Ч�ų���׳�IllegalStateException�쳣��,"protected void handleInvalidExcludes(List<String> invalidExcludes) {
+		StringBuilder message = new StringBuilder();
+		for (String exclude : invalidExcludes) {
+			message.append(""\t- "").append(exclude).append(String.format(""%n""));
+		}
+		throw new IllegalStateException(String
+				.format(""The following classes could not be excluded because they are""
+						+ "" not auto-configuration classes:%n%s"", message));
+	}","Handle any invalid excludes that have been specified.
+@param invalidExcludes the list of invalid excludes (will always have at least one
+element)",2
+JSONArray.optLong,�÷�����JSONArrayָ������������ȡһ��ֵ���������䳤���ͱ�ʾ�������ֵ�����ڻ��ܱ�ת��Ϊ�����ͣ��򷵻�ָ����Ĭ��ֵ��ʵ�ֹ����У�����ͨ��opt������ȡ���������Ķ���Ȼ��ʹ��JSON.toLong�������Խ��ö���ת��ΪLong���͡����ת���õ��Ľ����Ϊ�գ��򷵻ش˽�������򣬷����ṩ��Ĭ��ֵ��,��JSONArray�л�ȡ������ֵ�������ڻ򲻿�ת��ʱ����Ĭ��ֵ,"public long optLong(int index, long fallback) {
+		Object object = opt(index);
+		Long result = JSON.toLong(object);
+		return result != null ? result : fallback;
+	}","Returns the value at {@code index} if it exists and is a long or can be coerced to
+a long. Returns {@code fallback} otherwise.
+@param index the index to get the value from
+@param fallback the fallback value
+@return the value at {@code index} of {@code fallback}",2
+AbstractClassifier.classify,ʹ���Ѿ�ѵ���ķ������������ı�����Ԥ�⡣���ȣ�ͨ������predict������������ܵķ��༰��÷֣����洢��scoreMap�С�Ȼ������CollectionUtility.max����ѡ��÷���ߵķ��෵�ء��˷��������׳�IllegalArgumentException��IllegalStateException��,����predict�������ı����࣬������ߵ÷ֵķ��ࡣ,"@Override
+    public String classify(String text) throws IllegalArgumentException, IllegalStateException
+    {
+        Map<String, Double> scoreMap = predict(text);
+
+        return CollectionUtility.max(scoreMap);
+    }","ʹ��һ��ѵ�������ķ�������Ԥ�����
+
+@param text
+@return
+@throws IllegalArgumentException
+@throws IllegalStateException",2
+Graph.connect,"This method creates an edge between two nodes in a graph: the 'from' node and the 'to' node, both represented by their integer indices. The edge is defined with a weight and includes a label composed of the concatenated 'word' properties of the two vertexes connected by this edge. The method specifically adds a new 'EdgeFrom' object to the list of edges corresponding to the 'to' node, thereby establishing a directed connection from 'from' to 'to'.",Connects two graph nodes with a weighted edge.,"public void connect(int from, int to, double weight)
+    {
+        edgesTo[to].add(new EdgeFrom(from, weight, vertexes[from].word + '@' + vertexes[to].word));
+    }","���������ڵ�
+@param from ���
+@param to �յ�
+@param weight ����",1
+DynamicRegistrationBean.getOrDeduceName,�˷�������Ϊע���ȡ���ƶ����ơ��������ȼ�������(this.name)�Ƿ�Ϊ�գ������Ϊ�գ��򷵻ظ�������Ϊ���ս�������򣬵���Conventions.getVariableName(value)������ʹ�ô���Ķ���value����Լ���ƶ����ƣ��������ƶϽ����,��ȡ���ƶ�ע�����ƣ������û�ָ����Լ�����ơ�,"protected final String getOrDeduceName(Object value) {
+		return (this.name != null) ? this.name : Conventions.getVariableName(value);
+	}","Deduces the name for this registration. Will return user specified name or fallback
+to convention based naming.
+@param value the object used for convention based names
+@return the deduced name",1
+PerceptronClassifier.evaluate,�˷����Ը�����corpus�ַ���ִ���������������ȣ�ʹ��readInstance������corpus��model.featureMap���ת��ΪInstance���飬������evaluate������ת�����ʵ���������������������BinaryClassificationFMeasure������Ϊ�����,���ı����Ͽ�������������ض������F����ֵ��,"public BinaryClassificationFMeasure evaluate(String corpus)
+    {
+        Instance[] instanceList = readInstance(corpus, model.featureMap);
+        return evaluate(instanceList);
+    }","����
+
+@param corpus
+@return",2
