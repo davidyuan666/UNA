@@ -4,7 +4,7 @@
 [![Python 3.7+](https://img.shields.io/badge/python-3.7+-blue.svg)](https://www.python.org/downloads/)
 [![Documentation Status](https://readthedocs.org/projects/bpe-una/badge/?version=latest)](https://bpe-una.readthedocs.io/en/latest/?badge=latest)
 
-BPE-UNA implements a Unified Neural Architecture that combines Byte Pair Encoding (BPE) and Vocabulary Learning through Optimization (VOLT) for efficient code and natural language processing.
+BPE-UNA implements a Unified Neural Architecture that combines Byte Pair Encoding (BPE) and Vocabulary Learning through Optimization (VOLT) for efficient code and natural language processing, with special support for Java and Python.
 
 ## Table of Contents
 - [Overview](#overview)
@@ -23,140 +23,135 @@ BPE-UNA implements a Unified Neural Architecture that combines Byte Pair Encodin
 
 BPE-UNA provides an integrated approach for vocabulary construction that:
 - Combines code and natural language tokens in a unified vocabulary
-- Optimizes vocabulary size while maintaining semantic relationships
-- Reduces computational overhead through efficient merge operations
-- Supports multiple programming languages and natural language text
+- Supports language-specific tokenization for Java and Python
+- Optimizes vocabulary size using VOLT optimization
+- Provides cross-modal semantic preservation
+- Implements efficient evaluation metrics
 
 ## Features
 
+- **Multiple Encoder Support**
+  - Unified encoder for general purpose
+  - Java-specific BPE encoder
+  - Python-specific BPE encoder
+
 - **Integrated BPE-VOLT Optimization**
-  - Efficient merge operation selection
+  - Temperature-based token selection
   - Dynamic utility scoring
-  - Adaptive stopping criteria
+  - Cross-modal optimization
 
-- **Modality-specific Token Handling**
-  - Separate handling for code and text
-  - Customizable modality weights
-  - Cross-modal semantic preservation
+- **Language-Specific Features**
+  - Java syntax awareness
+  - Python indentation handling
+  - Language-specific tokenization
 
-- **Performance Optimizations**
-  - Efficient data structures
-  - Parallel processing support
-  - Memory usage optimization
+- **Evaluation Metrics**
+  - Mean Reciprocal Rank (MRR)
+  - Normalized Discounted Cumulative Gain (NDCG)
+  - Recall@K (K=1,5,10)
 
 ## Installation
 
 1. Clone the repository:
-
 ```bash
-git clone https://github.com/yourusername/bpe-UNA.git
-```
-
-2. Navigate to the project directory:
-
-```bash
-cd bpe-UNA
+git clone https://github.com/davidyuan666/bpe-UNA.git
 ```
 
 2. Install dependencies:
-
 ```bash
 pip install -r requirements.txt
 ```
 
-
-
 ## Quick Start
 
+### Using the Unified Encoder
 ```python
 from unified_encoder import UnifiedEncoder
-Initialize encoder
+
+# Initialize encoder
 encoder = UnifiedEncoder(
-vocab_size=8192,
-pct_bpe=0.2,
-volt_temp=1.0,
-modality_weights={'code': 0.5, 'nl': 0.5}
+    vocab_size=8192,
+    pct_bpe=0.2,
+    volt_temp=1.0,
+    modality_weights={'code': 0.6, 'nl': 0.4}
 )
-Prepare your data
+
+# Prepare data
 code_data = ["def example(): pass", "class Test: ..."]
 nl_data = ["This is a test", "Example documentation"]
-Fit the encoder
+
+# Fit and transform
 encoder.fit(code_data, nl_data)
-Transform text
 encoded = encoder.transform("def example():", modality='code')
 ```
 
+### Using Language-Specific Encoders
+```python
+from java_bpe_encoder import JavaBPETokenizer
+from python_bpe_encoder import PythonBPETokenizer
+
+# Java encoder
+java_encoder = JavaBPETokenizer(vocab_size=8192)
+java_encoder.fit(java_code_data, nl_data)
+
+# Python encoder
+python_encoder = PythonBPETokenizer(vocab_size=8192)
+python_encoder.fit(python_code_data, nl_data)
+```
 
 ## Configuration
 
 ### Key Parameters
 
-| Parameter | Description | Default |
-|-----------|-------------|---------|
-| `vocab_size` | Maximum vocabulary size | 8192 |
-| `pct_bpe` | Percentage for BPE tokens | 0.2 |
-| `volt_temp` | VOLT temperature | 1.0 |
-| `modality_weights` | Modality weights | {'code': 0.5, 'nl': 0.5} |
+| Parameter | Description | Default | Applicable To |
+|-----------|-------------|---------|---------------|
+| `vocab_size` | Maximum vocabulary size | 8192 | All encoders |
+| `pct_bpe` | Percentage for BPE tokens | 0.2 | All encoders |
+| `volt_temp` | VOLT temperature | 1.0 | All encoders |
+| `modality_weights` | Modality weights | {'code': 0.6, 'nl': 0.4} | UnifiedEncoder |
 
-### Advanced Configuration
-
+### Advanced Usage
 ```python
-python
-encoder = UnifiedEncoder(
-vocab_size=8192,
-pct_bpe=0.2,
-volt_temp=1.0,
-modality_weights={'code': 0.5, 'nl': 0.5},
-ngram_min=2,
-ngram_max=2,
-silent=True
-)
+# Run comprehensive evaluation
+from main import run_test
+
+results = run_test()
+# Results include MRR, NDCG, and Recall@K metrics
 ```
-
-
-## Performance
-
-Our implementation achieves significant improvements:
-
-| Metric | Improvement |
-|--------|-------------|
-| Merge Operation Time | -60% |
-| Memory Usage | -45% |
-| Vocabulary Size | -30% |
-| Computational Complexity | O(n log n) |
 
 ## Usage Examples
 
-### Code Summarization
-
-
+### Code Processing
 ```python
-Process source code
-code = """
-def calculate_sum(a, b):
-return a + b
-"""
-encoded_code = encoder.transform(code, modality='code')
-```
-
-### Natural Language Processing
-
-
-```python
-Process documentation
-text = "This function calculates the sum of two numbers"
-encoded_text = encoder.transform(text, modality='nl')
-```
-
-### Combined Processing
-
-```python
-Process both code and documentation
-encoder.fit(code_samples, doc_samples)
-encoded_results = {
-'code': encoder.transform(code, modality='code'),
-'docs': encoder.transform(docs, modality='nl')
+# Java code processing
+java_code = """
+public class Example {
+    public int add(int a, int b) {
+        return a + b;
+    }
 }
+"""
+encoded_java = java_encoder.transform(java_code, modality='code')
+
+# Python code processing
+python_code = """
+def add(a, b):
+    return a + b
+"""
+encoded_python = python_encoder.transform(python_code, modality='code')
+```
+
+### Evaluation
+```python
+from main import evaluate_encoder
+
+metrics = evaluate_encoder(
+    encoder=encoder,
+    code_corpus=code_data,
+    nl_corpus=nl_data
+)
+print(f"MRR: {metrics['mrr']:.3f}")
+print(f"NDCG: {metrics['ndcg']:.3f}")
 ```
 
 

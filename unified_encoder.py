@@ -12,12 +12,25 @@ from tqdm import tqdm
 import toolz
 import json
 
+try:
+    from typing import Dict, Iterable, Callable, List, Any, Iterator
+except ImportError:
+    pass
+
+DEFAULT_EOW = '__eow'
+DEFAULT_SOW = '__sow'
+DEFAULT_UNK = '__unk'
+DEFAULT_PAD = '__pad'
+
 class UnifiedEncoder:
     def __init__(self, vocab_size=8192, pct_bpe=0.2, 
                  word_tokenizer=None, silent=True,
                  ngram_min=2, ngram_max=2, 
                  volt_temp=1.0, # Temperature parameter for VOLT
                  modality_weights={'code': 0.5, 'nl': 0.5}, # Weights for different modalities
+                 strict=False, lowercase=True,
+                 EOW=DEFAULT_EOW, SOW=DEFAULT_SOW, 
+                 UNK=DEFAULT_UNK, PAD=DEFAULT_PAD,
                  **kwargs):
         """
         Unified Neural Architecture encoder combining BPE and VOLT
@@ -28,23 +41,56 @@ class UnifiedEncoder:
             volt_temp: Temperature parameter for VOLT optimization
             modality_weights: Weights for different modalities in unified vocab
         """
+        if vocab_size < 1:
+            raise ValueError('vocab size must be greater than 0.')
+            
         self.vocab_size = vocab_size
         self.pct_bpe = pct_bpe
         self.volt_temp = volt_temp
         self.modality_weights = modality_weights
         
-        # Initialize basic components similar to original encoder
+        # Special tokens
+        self.EOW = EOW
+        self.SOW = SOW
+        self.UNK = UNK
+        self.PAD = PAD
+        self.eow_len = len(EOW)
+        self.sow_len = len(SOW)
+        
+        # Initialize basic components
         self.word_tokenizer = word_tokenizer or wordpunct_tokenize
+        self.custom_tokenizer = word_tokenizer is not None
         self.word_vocab = {}
         self.bpe_vocab = {}
         self._progress_bar = iter if silent else tqdm
         
-        # New components for unified vocabulary
+        # BPE parameters
+        self.ngram_min = ngram_min
+        self.ngram_max = ngram_max
+        self.strict = strict
+        self.lowercase = lowercase
+        
+        # Calculate vocab sizes
+        self.word_vocab_size = max([int(vocab_size * (1 - pct_bpe)), len([self.UNK, self.PAD])])
+        self.bpe_vocab_size = vocab_size - self.word_vocab_size
+        
+        # Initialize vocabularies
         self.unified_vocab = {}
         self.modality_specific_vocabs = {
             'code': Counter(),
             'nl': Counter()
         }
+        self.inverse_word_vocab = {}
+        self.inverse_bpe_vocab = {}
+
+    def _count_tokens(self, corpus, modality):
+        """Count tokens in corpus for specific modality"""
+        counts = Counter()
+        for sample in self._progress_bar(corpus):
+            tokens = self.tokenize(sample)
+            counts.update(tokens)
+            self.modality_specific_vocabs[modality].update(tokens)
+        return counts
 
     def learn_unified_vocab(self, code_corpus, nl_corpus):
         """Learn unified vocabulary using VOLT optimization"""
@@ -82,6 +128,45 @@ class UnifiedEncoder:
             for idx, (token, _) in enumerate(sorted_tokens[:self.vocab_size])
         }
 
+    def byte_pair_counts(self, words):
+        """Count byte pair frequencies"""
+        for token, count in self._progress_bar(self.count_tokens(words).items()):
+            bp_counts = Counter()
+            for ngram in token.split(' '):
+                bp_counts[ngram] += count
+            for ngram_size in range(self.ngram_min, min([self.ngram_max, len(token)]) + 1):
+                ngrams = [''.join(ngram) for ngram in toolz.sliding_window(ngram_size, token.split(' '))]
+                for ngram in ngrams:
+                    bp_counts[''.join(ngram)] += count
+            yield bp_counts
+
+    def _learn_bpe(self, tokens):
+        """Learn BPE vocabulary for OOV tokens"""
+        # Initialize with character vocabulary
+        vocab = Counter()
+        for token in tokens:
+            chars = ' '.join(list(token))
+            vocab.update(chars.split())
+            
+        # Perform merges
+        merges = {}
+        while len(vocab) < self.bpe_vocab_size:
+            pairs = self._get_merge_candidates(tokens)
+            if not pairs:
+                break
+                
+            best_pair = max(pairs.items(), key=lambda x: x[1])[0]
+            new_token = ''.join(best_pair)
+            
+            # Update vocabulary
+            vocab[new_token] = pairs[best_pair]
+            merges[best_pair] = new_token
+            
+            # Update tokens
+            tokens = [self._merge_pair(token, best_pair, new_token) for token in tokens]
+            
+        return vocab
+
     def fit(self, code_data, nl_data):
         """Fit the encoder on both code and natural language data"""
         # Learn unified vocabulary
@@ -90,153 +175,131 @@ class UnifiedEncoder:
         # Learn BPE vocab for out-of-vocabulary tokens
         remaining_tokens = self._get_oov_tokens(code_data, nl_data)
         self.bpe_vocab = self._learn_bpe(remaining_tokens)
+        
+        # Create inverse mappings
+        self.inverse_word_vocab = {v: k for k, v in self.word_vocab.items()}
+        self.inverse_bpe_vocab = {v: k for k, v in self.bpe_vocab.items()}
 
-    def _get_oov_tokens(self, code_data, nl_data):
-        """Get tokens not in unified vocabulary"""
-        all_tokens = set()
-        for text in code_data + nl_data:
-            tokens = self.tokenize(text)
-            all_tokens.update(t for t in tokens if t not in self.unified_vocab)
-        return list(all_tokens)
-
-    def transform(self, text, modality='nl'):
+    def transform(self, text, modality='nl', reverse=False, fixed_length=None):
         """Transform text to token indices with modality-specific handling"""
-        tokens = self.tokenize(text)
+        direction = -1 if reverse else 1
+        tokens = self.tokenize(text.lower().strip() if self.lowercase else text.strip())
         encoded = []
+        in_subword = False
         
         for token in tokens:
-            if token in self.unified_vocab:
-                encoded.append(self.unified_vocab[token])
-            elif token in self.bpe_vocab:
-                encoded.append(self.bpe_vocab[token])
+            if in_subword:
+                if token in self.bpe_vocab:
+                    if token == self.EOW:
+                        in_subword = False
+                    encoded.append(self.bpe_vocab[token])
+                else:
+                    encoded.append(self.word_vocab[self.UNK])
             else:
-                # Handle OOV tokens
-                subwords = self.subword_tokenize(token)
-                encoded.extend(self.bpe_vocab.get(sw, self.bpe_vocab['<unk>']) 
-                             for sw in subwords)
+                if token == self.SOW:
+                    in_subword = True
+                    encoded.append(self.bpe_vocab[token])
+                else:
+                    if token in self.unified_vocab:
+                        encoded.append(self.unified_vocab[token])
+                    elif token in self.bpe_vocab:
+                        encoded.append(self.bpe_vocab[token])
+                    else:
+                        subwords = self.subword_tokenize(token)
+                        encoded.extend(self.bpe_vocab.get(sw, self.bpe_vocab[self.UNK]) 
+                                     for sw in subwords)
+
+        if fixed_length is not None:
+            encoded = encoded[:fixed_length]
+            while len(encoded) < fixed_length:
+                encoded.append(self.word_vocab[self.PAD])
                 
-        return encoded
+        return encoded[::direction]
 
-
-    def _integrate_bpe_volt(self, token_counts, num_merges):
-        """Integrate BPE and VOLT optimization for merge operations
-        
-        Args:
-            token_counts: Counter of initial tokens
-            num_merges: Number of merge operations to perform
+    def inverse_transform(self, rows):
+        """Turns token indexes back into space-joined text"""
+        for row in rows:
+            words = []
+            rebuilding_word = False
+            current_word = ''
             
-        Returns:
-            Dictionary mapping merged tokens to their indices
-        """
-        # Initialize with character-level tokens
-        vocab = {ch: idx for idx, ch in enumerate(set(''.join(token_counts.keys())))}
-        merges = {}
-        
-        # Priority queue for merge candidates
-        from heapq import heappush, heappop
-        merge_queue = []
-        
-        # Track merge statistics
-        merge_stats = {
-            'vocab_size': [],
-            'performance': []
+            for idx in row:
+                if self.inverse_bpe_vocab.get(idx) == self.SOW:
+                    if rebuilding_word and self.strict:
+                        raise ValueError('Encountered second SOW token before EOW.')
+                    rebuilding_word = True
+
+                elif self.inverse_bpe_vocab.get(idx) == self.EOW:
+                    if not rebuilding_word and self.strict:
+                        raise ValueError('Encountered EOW without matching SOW.')
+                    rebuilding_word = False
+                    words.append(current_word)
+                    current_word = ''
+
+                elif rebuilding_word and (idx in self.inverse_bpe_vocab):
+                    current_word += self.inverse_bpe_vocab[idx]
+
+                elif rebuilding_word and (idx in self.inverse_word_vocab):
+                    current_word += self.inverse_word_vocab[idx]
+
+                elif idx in self.inverse_word_vocab:
+                    words.append(self.inverse_word_vocab[idx])
+
+                elif idx in self.inverse_bpe_vocab:
+                    if self.strict:
+                        raise ValueError("Found BPE index {} when not rebuilding word!".format(idx))
+                    else:
+                        words.append(self.inverse_bpe_vocab[idx])
+
+                else:
+                    raise ValueError("Got index {} that was not in word or BPE vocabs!".format(idx))
+
+            yield ' '.join(w for w in words if w != '')
+
+    def save(self, outpath, dont_warn=False, encoding=None, ensure_ascii=True, indent=2):
+        """Serializes and saves encoder to provided path"""
+        if self.custom_tokenizer and not dont_warn:
+            print("WARNING! You've specified a non-default tokenizer. You'll need to reassign it when you load the model!")
+            
+        model_data = {
+            'unified_vocab': self.unified_vocab,
+            'bpe_vocab': self.bpe_vocab,
+            'word_vocab': self.word_vocab,
+            'modality_specific_vocabs': self.modality_specific_vocabs,
+            'kwargs': {
+                'vocab_size': self.vocab_size,
+                'pct_bpe': self.pct_bpe,
+                'volt_temp': self.volt_temp,
+                'modality_weights': self.modality_weights,
+                'silent': self._progress_bar is iter,
+                'ngram_min': self.ngram_min,
+                'ngram_max': self.ngram_max,
+                'strict': self.strict,
+                'lowercase': self.lowercase,
+                'EOW': self.EOW,
+                'SOW': self.SOW,
+                'UNK': self.UNK,
+                'PAD': self.PAD,
+            }
         }
         
-        for i in range(num_merges):
-            # Get merge candidates from BPE
-            pairs = self._get_merge_candidates(token_counts)
-            
-            # Score candidates using VOLT utility function
-            for pair, freq in pairs.items():
-                utility = self._calculate_utility(pair, freq, token_counts)
-                heappush(merge_queue, (-utility, pair))
-                
-            # Execute highest utility merge
-            if merge_queue:
-                _, best_pair = heappop(merge_queue)
-                self._execute_merge(best_pair, token_counts, vocab, merges)
-                
-                # Update statistics
-                merge_stats['vocab_size'].append(len(vocab))
-                
-                # Check stopping criteria
-                if self._should_stop(merge_stats):
-                    break
-                    
-        return vocab, merges
+        with open(outpath, 'w', encoding=encoding) as outfile:
+            json.dump(model_data, outfile, ensure_ascii=ensure_ascii, indent=indent)
 
-    def _calculate_utility(self, pair, freq, token_counts):
-        """Calculate utility score for a merge candidate using VOLT
-        
-        Args:
-            pair: Tuple of tokens to be merged
-            freq: Frequency of the pair
-            token_counts: Current token counts
+    @classmethod
+    def load(cls, path):
+        """Load encoder from saved file"""
+        with open(path) as infile:
+            model_data = json.load(infile)
             
-        Returns:
-            Utility score combining frequency and semantic importance
-        """
-        # Frequency score
-        f_score = freq / sum(token_counts.values())
+        encoder = cls(**model_data['kwargs'])
+        encoder.unified_vocab = model_data['unified_vocab']
+        encoder.bpe_vocab = model_data['bpe_vocab']
+        encoder.word_vocab = model_data['word_vocab']
+        encoder.modality_specific_vocabs = model_data['modality_specific_vocabs']
         
-        # Semantic importance score (e.g., based on cross-modal coverage)
-        s_score = self._semantic_importance(pair)
+        # Recreate inverse mappings
+        encoder.inverse_word_vocab = {v: k for k, v in encoder.word_vocab.items()}
+        encoder.inverse_bpe_vocab = {v: k for k, v in encoder.bpe_vocab.items()}
         
-        # Cross-modal coverage score
-        c_score = self._cross_modal_coverage(pair)
-        
-        # Combine scores with weights from initialization
-        utility = (self.modality_weights['code'] * f_score + 
-                0.3 * s_score + 
-                0.3 * c_score)
-                
-        return utility
-
-    def _should_stop(self, merge_stats):
-        """Determine if merge operations should stop based on statistics
-        
-        Args:
-            merge_stats: Dictionary tracking merge statistics
-            
-        Returns:
-            Boolean indicating whether to stop merging
-        """
-        if len(merge_stats['vocab_size']) < 2:
-            return False
-            
-        # Check vocabulary growth rate
-        vocab_growth = (merge_stats['vocab_size'][-1] - 
-                    merge_stats['vocab_size'][-2]) / merge_stats['vocab_size'][-2]
-                    
-        # Stop if vocabulary growth is minimal
-        if vocab_growth < 0.001:
-            return True
-            
-        # Stop if vocabulary size exceeds limit
-        if merge_stats['vocab_size'][-1] >= self.vocab_size:
-            return True
-            
-        return False
-
-    def _execute_merge(self, pair, token_counts, vocab, merges):
-        """Execute a merge operation and update relevant data structures
-        
-        Args:
-            pair: Tuple of tokens to merge
-            token_counts: Current token counts
-            vocab: Current vocabulary
-            merges: Record of merge operations
-        """
-        new_token = ''.join(pair)
-        
-        # Add to vocabulary if not present
-        if new_token not in vocab:
-            vocab[new_token] = len(vocab)
-            
-        # Record merge operation
-        merges[pair] = new_token
-        
-        # Update token counts
-        token_counts[new_token] = token_counts[pair]
-        del token_counts[pair]
-
+        return encoder
