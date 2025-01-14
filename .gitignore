@@ -1,3 +1,10 @@
-llm_util.py
-run_llm_main.py
 __pycache__/*
+.venv/
+*.pyc
+*.pyo
+*.pyd
+*.pyw
+*.pyz
+*.py
+.idea/
+.venv/
