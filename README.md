@@ -3,11 +3,19 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.7+](https://img.shields.io/badge/python-3.7+-blue.svg)](https://www.python.org/downloads/)
 [![Documentation Status](https://readthedocs.org/projects/bpe-una/badge/?version=latest)](https://bpe-una.readthedocs.io/en/latest/?badge=latest)
+[![IEEE Paper](https://img.shields.io/badge/📄_IEEE_Paper-PDF-red)](https://ieeexplore.ieee.org/abstract/document/10909995)
+[![DOI](https://img.shields.io/badge/DOI-10.1109%2FXXX.2023.10909995-blue)](https://doi.org/10.1109/XXX.2023.10909995)
 
-BPE-UNA implements a Unified Neural Architecture that combines Byte Pair Encoding (BPE) and Vocabulary Learning through Optimization (VOLT) for efficient code and natural language processing, with special support for Java and Python.
+## 🚀 Overview
+BPE-UNA implements a ​**Unified Neural Architecture** that combines:
+- Byte Pair Encoding (BPE) 
+- Vocabulary Learning through Optimization (VOLT) 
 
-📄 ​**Published Paper**: [BPE-UNA: Unified Neural Architecture with Enhanced BPE and VOLT Integration](https://ieeexplore.ieee.org/abstract/document/10909995) (IEEE Xplore)
-
+for efficient code and natural language processing, with special support for:
+|   | Languages |
+|---|-----------|
+| 💻 | Java |
+| 🐍 | Python |
 
 ## Table of Contents
 - [Overview](#overview)
