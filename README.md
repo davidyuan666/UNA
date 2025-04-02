@@ -4,7 +4,6 @@
 [![Python 3.7+](https://img.shields.io/badge/python-3.7+-blue.svg)](https://www.python.org/downloads/)
 [![Documentation Status](https://readthedocs.org/projects/bpe-una/badge/?version=latest)](https://bpe-una.readthedocs.io/en/latest/?badge=latest)
 [![IEEE Paper](https://img.shields.io/badge/📄_IEEE_Paper-PDF-red)](https://ieeexplore.ieee.org/abstract/document/10909995)
-[![DOI](https://img.shields.io/badge/DOI-10.1109%2FXXX.2023.10909995-blue)](https://doi.org/10.1109/XXX.2023.10909995)
 
 ## 📜 Publication Details
 **Full Paper URL**:  
