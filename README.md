@@ -6,6 +6,10 @@
 [![IEEE Paper](https://img.shields.io/badge/📄_IEEE_Paper-PDF-red)](https://ieeexplore.ieee.org/abstract/document/10909995)
 [![DOI](https://img.shields.io/badge/DOI-10.1109%2FXXX.2023.10909995-blue)](https://doi.org/10.1109/XXX.2023.10909995)
 
+## 📜 Publication Details
+**Full Paper URL**:  
+🔗 [https://ieeexplore.ieee.org/document/10909995](https://ieeexplore.ieee.org/document/10909995)  
+
 ## 🚀 Overview
 BPE-UNA implements a ​**Unified Neural Architecture** that combines:
 - Byte Pair Encoding (BPE) 
