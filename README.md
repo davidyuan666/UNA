@@ -6,6 +6,9 @@
 
 BPE-UNA implements a Unified Neural Architecture that combines Byte Pair Encoding (BPE) and Vocabulary Learning through Optimization (VOLT) for efficient code and natural language processing, with special support for Java and Python.
 
+📄 ​**Published Paper**: [BPE-UNA: Unified Neural Architecture with Enhanced BPE and VOLT Integration](https://ieeexplore.ieee.org/abstract/document/10909995) (IEEE Xplore)
+
+
 ## Table of Contents
 - [Overview](#overview)
 - [Features](#features)
