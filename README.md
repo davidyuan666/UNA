@@ -187,12 +187,16 @@ We welcome contributions! Please follow these steps:
 If you use this code in your research, please cite:
 
 ```bibtex
-@article{bpe-una2023,
-title={UNA: Unified Neural Architecture for Code-Related Tasks},
-author={David Yuan},
-journal={XX},
-year={2024}
-}
+@ARTICLE{10909995,
+  author={Yuan, Dawei and Zhang, Tao and Jiang, He},
+  journal={IEEE Transactions on Reliability}, 
+  title={UNA: Improving Automated PL-NL System by A Unified Neural Architecture}, 
+  year={2025},
+  volume={},
+  number={},
+  pages={1-15},
+  keywords={Vocabulary;Source coding;Natural languages;Codes;Computer architecture;Neural networks;Semantics;Entropy;Training;Software;Artificial intelligence;representation learning;unified neural architecture (UNA);unified vocabulary (Uni-Vocab)},
+  doi={10.1109/TR.2025.3541087}}
 ```
 
 
